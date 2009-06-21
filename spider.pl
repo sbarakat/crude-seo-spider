@@ -806,8 +806,8 @@ sub make_request {
 
     # Log if requested
 
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_URL;
+    log_response( $response, $server, $uri, $parent, $depth );
+        #if $server->{debug} & DEBUG_URL;
 
 
 
@@ -909,8 +909,8 @@ sub failed_response {
 
 
     # Otherwise, log if needed and then return.
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_FAILED;
+    log_response( $response, $server, $uri, $parent, $depth );
+        #if $server->{debug} & DEBUG_FAILED;
 
     return;
 }
@@ -1023,8 +1023,8 @@ sub authorize {
         }
     }
 
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_FAILED;
+    log_response( $response, $server, $uri, $parent, $depth );
+        #if $server->{debug} & DEBUG_FAILED;
 
     return;  # Give up
 }
@@ -1385,7 +1385,7 @@ sub validate_link {
 #
 #-----------------------------------------------------------------------------------
 
-sub output_content {
+sub output_content_o {
     my ( $server, $content, $uri, $response ) = @_;
 
     $server->{indexed}++;
@@ -1468,6 +1468,87 @@ sub output_content {
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 }
 
+sub output_content {
+    my ( $server, $content, $uri, $response ) = @_;
+
+    $server->{indexed}++;
+
+    unless ( length $$content ) {
+        print STDERR "Warning: document '", $response->request->uri, "' has no content\n";
+        $$content = ' ';
+    }
+
+
+    ## Now, either need to re-encode into the original charset,
+    # or remove any charset from <meta> tags and then return utf8.
+    # HTTP::Message uses a different method to extract out the charset,
+    # but should result in the same value.
+    for ( $response->header('content-type') ){
+        $server->{charset} = $1 if /\bcharset=([^;]+)/;
+    }
+    # Re-encode the data for outside of Perl
+    eval {
+        # Need to only require Encode here?
+        $$content = Encode::encode( $server->{charset}, $$content )
+            if $server->{charset};
+    };
+    if ( $@ ) {
+        print STDERR "Warning: document '", $response->request->uri, "' could not be encoded to charset '$server->{charset}'\n";
+        delete $server->{charset};
+    }
+
+    $server->{counts}{'Total Bytes'} += length $$content;
+    $server->{counts}{'Total Docs'}++;
+
+
+    # ugly and maybe expensive, but perhaps more portable than "use bytes"
+    my $bytecount = length pack 'C0a*', $$content;
+
+    # Decode the URL
+    my $path = $uri;
+    $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
+
+
+    # For Josh
+    if ( my $fn = $server->{output_function} ) {
+        eval {
+            $fn->(  $server, $content, $uri, $response, $bytecount, $path); 
+        };
+        die "output_function died for $uri: $@\n" if $@;
+
+        die "$0: Max indexed files Reached\n"
+            if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
+
+        return;
+    }
+
+    my $headers = join "\n",
+        'Path-Name: ' .  $path,
+        'Content-Length: ' . $bytecount,
+        '';
+
+    $headers .= 'Charset: ' . delete( $server->{charset}) . "\n" if $server->{charset};
+
+    $headers .= 'Last-Mtime: ' . $response->last_modified . "\n"
+        if $response->last_modified;
+
+    # Set the parser type if specified by filtering
+    if ( my $type = delete $server->{parser_type} ) {
+        $headers .= "Document-Type: $type\n";
+
+    } elsif ( $response->content_type =~ m!^text/(html|xml|plain)! ) {
+        $type = $1 eq 'plain' ? 'txt' : $1;
+        $headers .= "Document-Type: $type*\n";
+    }
+
+
+    $headers .= "No-Contents: 1\n" if $server->{no_contents};
+    #print "$headers\n$$content";
+    print "$bytecount -   " . $response->status_line . " - " . $path . "\n";
+
+    die "$0: Max indexed files Reached\n"
+        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
+}
 
 
 sub commify {
