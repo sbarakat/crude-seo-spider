@@ -120,7 +120,7 @@ sub UNIVERSAL::userinfo { '' };
 
     my $config = shift || 'SwishSpiderConfig.pl';
 
-    if ( lc( $config ) == 'default' ) {
+    if ( lc( $config ) eq 'default' ) {
         @servers = default_urls();
     } else {
         do $config or die "Failed to read $0 configuration parameters '$config' $! $@";
@@ -129,7 +129,7 @@ sub UNIVERSAL::userinfo { '' };
             unless @servers;
 
         die "$0: config file '$config' did not set \@servers array to contain a hash\n"
-            unless ref $servers[0] == 'HASH';
+            unless ref $servers[0] eq 'HASH';
 
 
         # Check config options
@@ -163,7 +163,7 @@ sub UNIVERSAL::userinfo { '' };
 
         # Now, process each URL listed
 
-        my @urls = ref $s->{base_url} == 'ARRAY' ? @{$s->{base_url}} :( $s->{base_url});
+        my @urls = ref $s->{base_url} eq 'ARRAY' ? @{$s->{base_url}} :( $s->{base_url});
         for my $url ( @urls ) {
 
             # purge config options -- used when base_url is an array
@@ -245,7 +245,7 @@ sub process_server {
 
 
 
-    $server->{link_tags} = ['a'] unless ref $server->{link_tags} == 'ARRAY';
+    $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
     $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
 
     die "max_depth parameter '$server->{max_depth}' must be a number\n" if defined $server->{max_depth} && $server->{max_depth} !~ /^\d+/;
@@ -253,11 +253,11 @@ sub process_server {
 
     for ( qw/ test_url test_response filter_content/ ) {
         next unless $server->{$_};
-        $server->{$_} = [ $server->{$_} ] unless ref $server->{$_} == 'ARRAY';
+        $server->{$_} = [ $server->{$_} ] unless ref $server->{$_} eq 'ARRAY';
         my $n;
         for my $sub ( @{$server->{$_}} ) {
             $n++;
-            die "Entry number $n in $_ is not a code reference\n" unless ref $sub == 'CODE';
+            die "Entry number $n in $_ is not a code reference\n" unless ref $sub eq 'CODE';
         }
     }
 
@@ -398,11 +398,6 @@ sub process_server {
     eval { spider( $server, $uri ) };
     print STDERR $@ if $@;
 
-
-    # provide a way to call a function in the config file when all done
-    #check_user_function( 'spider_done', undef, $server );
-
-
     delete $server->{ua};  # Free up LWP to avoid CLOSE_WAITs hanging around when using a lot of @servers.
 
     return if $server->{quiet};
@@ -429,64 +424,6 @@ sub process_server {
             $server->{counts}{$_}/$start;
     }
 }
-
-
-#-----------------------------------------------------------------------
-# Deal with Basic Authen
-
-
-
-# Thanks Gisle!
-sub get_basic_credentials {
-    my($uri, $server, $realm ) = @_;
-
-    # Exists but undefined means don't ask.
-    return if exists $server->{credential_timeout} && !defined $server->{credential_timeout};
-
-    # Exists but undefined means don't ask.
-
-    my $netloc = $uri->canonical->host_port;
-
-    my ($user, $password);
-
-    eval {
-        local $SIG{ALRM} = sub { die "timed out\n" };
-
-        # a zero timeout means don't time out
-        alarm( $server->{credential_timeout} ) unless $^O =~ /Win32/i;
-
-        if (  $uri->userinfo ) {
-            print STDERR "\nSorry: invalid username/password\n";
-            $uri->userinfo( undef );
-        }
-
-
-        print STDERR "Need Authentication for $uri at realm '$realm'\n(<Enter> skips)\nUsername: ";
-        $user = <STDIN>;
-        chomp($user) if $user;
-        die "No Username specified\n" unless length $user;
-
-        alarm( $server->{credential_timeout} ) unless $^O =~ /Win32/i;
-
-        print STDERR "Password: ";
-        system("stty -echo");
-        $password = <STDIN>;
-        system("stty echo");
-        print STDERR "\n";  # because we disabled echo
-        chomp($password);
-        alarm( 0 ) unless $^O =~ /Win32/i;
-    };
-
-    alarm( 0 ) unless $^O =~ /Win32/i;
-
-    return if $@;
-
-    return join ':', $user, $password;
-
-
-}
-
-
 
 
 #----------- Non recursive spidering ---------------------------
@@ -616,7 +553,7 @@ sub process_link {
     if ( $server->{last_auth} ) {
         my $path = $uri->path;
         $path =~ s!/[^/]*$!!;
-        $last_auth = $server->{last_auth}{auth} if $server->{last_auth}{path} == $path;
+        $last_auth = $server->{last_auth}{auth} if $server->{last_auth}{path} eq $path;
     }
 
 
@@ -637,7 +574,7 @@ sub process_link {
         # This is ugly in what it can return.  It's can be recursive.
         $response = make_request( $request, $server, $uri, $parent, $depth );
 
-        return $response if !$response || ref $response == 'ARRAY';  # returns undef or an array ref if done
+        return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref if done
 
         # otherwise, we have a response object.
 
@@ -647,7 +584,7 @@ sub process_link {
 
     # Now make GET request
     $response = make_request( $request, $server, $uri, $parent, $depth );
-    return $response if !$response || ref $response == 'ARRAY';  # returns undef or an array ref
+    return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
 
     # Now we have a $response object with content
@@ -683,7 +620,7 @@ sub make_request {
 
     my $ua = $server->{ua};
 
-    if ( $request->method == 'GET' ) {
+    if ( $request->method eq 'GET' ) {
 
         # When making a GET request this gets called for every chunk returned
         # from the webserver (well, from the OS).  No idea how bit it will be.
@@ -802,7 +739,7 @@ sub make_request {
 
 
     # Don't log HEAD requests
-    return $request if $request->method == 'HEAD';
+    return $request if $request->method eq 'HEAD';
 
     # Log if requested
 
@@ -825,7 +762,6 @@ sub make_request {
 #===================================================================
 # check_response -- after resonse comes back from server
 #
-# Failure here should die() because check_user_function can die()
 #
 #-------------------------------------------------------------------
 sub check_response {
@@ -851,9 +787,6 @@ sub check_response {
 
     # check for document too big.
     check_too_big( $response, $server ) if $server->{max_size};
-
-
-    #die "test_response" if !check_user_function( 'test_response', $uri, $server, $response );
 
 }
 
@@ -884,7 +817,7 @@ sub failed_response {
     # Do we need to authorize?
     if ( $response->code == 401 ) {
         # This will log the error
-        $links = authorize( $response, $server, $uri, $parent, $depth );
+        #$links = authorize( $response, $server, $uri, $parent, $depth );
         return $links if ref $links or !$links;
     }
 
@@ -909,8 +842,8 @@ sub failed_response {
 
 
     # Otherwise, log if needed and then return.
-    log_response( $response, $server, $uri, $parent, $depth );
-        #if $server->{debug} & DEBUG_FAILED;
+    log_response( $response, $server, $uri, $parent, $depth )
+        if $server->{debug} & DEBUG_FAILED;
 
     return;
 }
@@ -939,7 +872,7 @@ sub redirect_response {
     # and this may even break things
     my $u = URI->new_abs( $location, $response->base );
 
-    if ( $u->canonical == $uri->canonical ) {
+    if ( $u->canonical eq $uri->canonical ) {
         print STDERR "Warning: $uri redirects to itself!.\n";
         return;
     }
@@ -966,71 +899,6 @@ sub redirect_response {
 
 }
 
-#=================================================================================
-# Do we need to authorize?  If so, ask for password and request again.
-# First we try using any cached value
-# Then we try using the get_password callback
-# Then we ask.
-
-sub authorize {
-    my ( $response, $server, $uri, $parent, $depth ) = @_;
-
-
-    delete $server->{last_auth};  # since we know that doesn't work
-
-
-    if ( $response->header('WWW-Authenticate') && $response->header('WWW-Authenticate') =~ /realm="([^"]+)"/i ) {
-        my $realm = $1;
-        my $user_pass;
-
-        # Do we have a cached user/pass for this realm?
-        unless ( $server->{_request}{auth}{$uri}++ ) { # only each URI only once
-            my $key = $uri->canonical->host_port . ':' . $realm;
-
-            if ( $user_pass = $server->{auth_cache}{$key} ) {
-
-                # If we didn't just try it, try again
-                unless( $uri->userinfo && $user_pass == $uri->userinfo ) {
-
-                    # add the user/pass to the URI
-                    $uri->userinfo( $user_pass );
-                    return process_link( $server, $uri, $parent, $depth );
-                }
-            }
-        }
-
-        # now check for a callback password (if $user_pass not set)
-        unless ( $user_pass || $server->{_request}{auth}{callback}++ ) {
-
-            # Check for a callback function
-            $user_pass = $server->{get_password}->( $uri, $server, $response, $realm )
-                if ref $server->{get_password} == 'CODE';
-        }
-
-        # otherwise, prompt (over and over)
-
-        if ( !$user_pass ) {
-            $user_pass = get_basic_credentials( $uri, $server, $realm );
-        }
-
-
-        if ( $user_pass ) {
-            $uri->userinfo( $user_pass );
-            $server->{cur_realm} = $realm;  # save so we can cache if it's valid
-            my $links = process_link( $server, $uri, $parent, $depth );
-            delete $server->{cur_realm};
-            return $links;
-        }
-    }
-
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_FAILED;
-
-    return;  # Give up
-}
-
-
-
 
 #==================================================================================
 # Log a response
@@ -1053,44 +921,6 @@ sub log_response {
             "parent:$parent",
             "depth:$depth",
        ),"\n";
-}
-
-#===================================================================================================
-#  Calls a user-defined function
-#
-#---------------------------------------------------------------------------------------------------
-
-sub check_user_function {
-    my ( $fn, $uri, $server ) = ( shift, shift, shift );
-
-    return 1 unless $server->{$fn};
-
-    my $tests = ref $server->{$fn} == 'ARRAY' ? $server->{$fn} : [ $server->{$fn} ];
-
-    my $cnt;
-
-    for my $sub ( @$tests ) {
-        $cnt++;
-        print STDERR "?Testing '$fn' user supplied function #$cnt '$uri'\n" if $server->{debug} & DEBUG_INFO;
-
-        my $ret;
-
-        eval { $ret = $sub->( $uri, $server, @_ ) };
-
-        if ( $@ ) {
-            print STDERR "-Skipped $uri due to '$fn' user supplied function #$cnt death '$@'\n" if $server->{debug} & DEBUG_SKIPPED;
-            $server->{counts}{Skipped}++;
-            return;
-        }
-
-        next if $ret;
-
-        print STDERR "-Skipped $uri due to '$fn' user supplied function #$cnt\n" if $server->{debug} & DEBUG_SKIPPED;
-        $server->{counts}{Skipped}++;
-        return;
-    }
-    print STDERR "+Passed all $cnt tests for '$fn' user supplied function\n" if $server->{debug} & DEBUG_INFO;
-    return 1;
 }
 
 #==============================================================================
@@ -1157,8 +987,6 @@ sub process_content {
         print STDERR "-Skipped indexing $uri some callback set 'no_index' flag\n" if $server->{debug}&DEBUG_SKIPPED;
 
     } else {
-        return $links_extracted unless check_user_function( 'filter_content', $uri, $server, $response, \$content );
-
         output_content( $server, \$content, $uri, $response )
             unless $server->{no_index};
     }
@@ -1224,7 +1052,7 @@ sub extract_links {
                 join( ',', @{$server->{link_tags}} ),
                 ")\n" if $server->{debug} & DEBUG_LINKS && !$skipped_tags{$tag}++;
 
-            if ( $server->{validate_links} && $tag == 'img' && $attr{src} ) {
+            if ( $server->{validate_links} && $tag eq 'img' && $attr{src} ) {
                 my $img = URI->new_abs( $attr{src}, $base );
                 validate_link( $server, $img, $base );
             }
@@ -1300,7 +1128,7 @@ sub check_link {
 
     # Here we make sure we are looking at a link pointing to the correct (or equivalent) host
 
-    unless ( $server->{scheme} == $u->scheme && $server->{same_host_lookup}{$u->canonical->authority||''} ) {
+    unless ( $server->{scheme} eq $u->scheme && $server->{same_host_lookup}{$u->canonical->authority||''} ) {
 
         print STDERR qq[ ?? <$tag $attribute="$u"> skipped because different host\n] if $server->{debug} & DEBUG_LINKS;
         $server->{counts}{'Off-site links'}++;
@@ -1309,11 +1137,6 @@ sub check_link {
     }
 
     $u->host_port( $server->{authority} );  # Force all the same host name
-
-    # Allow rejection of this URL by user function
-
-    return unless check_user_function( 'test_url', $u, $server );
-
 
     # Don't add the link if already seen  - these are so common that we don't report
     # Might be better to do something like $visited{ $u->path } or $visited{$u->host_port}{$u->path};
@@ -1385,89 +1208,6 @@ sub validate_link {
 #
 #-----------------------------------------------------------------------------------
 
-sub output_content_o {
-    my ( $server, $content, $uri, $response ) = @_;
-
-    $server->{indexed}++;
-
-    unless ( length $$content ) {
-        print STDERR "Warning: document '", $response->request->uri, "' has no content\n";
-        $$content = ' ';
-    }
-
-
-    ## Now, either need to re-encode into the original charset,
-    # or remove any charset from <meta> tags and then return utf8.
-    # HTTP::Message uses a different method to extract out the charset,
-    # but should result in the same value.
-    for ( $response->header('content-type') ){
-        $server->{charset} = $1 if /\bcharset=([^;]+)/;
-    }
-    # Re-encode the data for outside of Perl
-    eval {
-        # Need to only require Encode here?
-        $$content = Encode::encode( $server->{charset}, $$content )
-            if $server->{charset};
-    };
-    if ( $@ ) {
-        print STDERR "Warning: document '", $response->request->uri, "' could not be encoded to charset '$server->{charset}'\n";
-        delete $server->{charset};
-    }
-
-    $server->{counts}{'Total Bytes'} += length $$content;
-    $server->{counts}{'Total Docs'}++;
-
-
-    # ugly and maybe expensive, but perhaps more portable than "use bytes"
-    my $bytecount = length pack 'C0a*', $$content;
-
-    # Decode the URL
-    my $path = $uri;
-    $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
-
-
-    # For Josh
-    if ( my $fn = $server->{output_function} ) {
-        eval {
-            $fn->(  $server, $content, $uri, $response, $bytecount, $path); 
-        };
-        die "output_function died for $uri: $@\n" if $@;
-
-        die "$0: Max indexed files Reached\n"
-            if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
-
-        return;
-    }
-
-
-    my $headers = join "\n",
-        'Path-Name: ' .  $path,
-        'Content-Length: ' . $bytecount,
-        '';
-
-
-    $headers .= 'Charset: ' . delete( $server->{charset}) . "\n" if $server->{charset};
-
-    $headers .= 'Last-Mtime: ' . $response->last_modified . "\n"
-        if $response->last_modified;
-
-    # Set the parser type if specified by filtering
-    if ( my $type = delete $server->{parser_type} ) {
-        $headers .= "Document-Type: $type\n";
-
-    } elsif ( $response->content_type =~ m!^text/(html|xml|plain)! ) {
-        $type = $1 == 'plain' ? 'txt' : $1;
-        $headers .= "Document-Type: $type*\n";
-    }
-
-
-    $headers .= "No-Contents: 1\n" if $server->{no_contents};
-    print "$headers\n$$content";
-
-    die "$0: Max indexed files Reached\n"
-        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
-}
-
 sub output_content {
     my ( $server, $content, $uri, $response ) = @_;
 
@@ -1508,20 +1248,6 @@ sub output_content {
     my $path = $uri;
     $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
 
-
-    # For Josh
-    if ( my $fn = $server->{output_function} ) {
-        eval {
-            $fn->(  $server, $content, $uri, $response, $bytecount, $path); 
-        };
-        die "output_function died for $uri: $@\n" if $@;
-
-        die "$0: Max indexed files Reached\n"
-            if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
-
-        return;
-    }
-
     my $headers = join "\n",
         'Path-Name: ' .  $path,
         'Content-Length: ' . $bytecount,
@@ -1537,14 +1263,18 @@ sub output_content {
         $headers .= "Document-Type: $type\n";
 
     } elsif ( $response->content_type =~ m!^text/(html|xml|plain)! ) {
-        $type = $1 == 'plain' ? 'txt' : $1;
+        $type = $1 eq 'plain' ? 'txt' : $1;
         $headers .= "Document-Type: $type*\n";
     }
 
 
     $headers .= "No-Contents: 1\n" if $server->{no_contents};
     #print "$headers\n$$content";
-    print "$bytecount -   " . $response->status_line . " - " . $path . "\n";
+    
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+    my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
+
+    print "$timestamp - " . $response->status_line . " $bytecount - " . $path . "\n";
 
     die "$0: Max indexed files Reached\n"
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
@@ -1560,7 +1290,7 @@ sub commify {
 sub default_urls {
 
     my $validate = 0;
-    if ( @ARGV && $ARGV[0] == 'validate' ) {
+    if ( @ARGV && $ARGV[0] eq 'validate' ) {
         shift @ARGV;
         $validate = 1;
     }
@@ -1585,8 +1315,6 @@ sub default_config {
 
     my ($filter_sub, $response_sub, $filter);
 
-    eval { ($filter_sub, $response_sub, $filter) = swish_filter() };
-
     if ( $@ ) {
 
         warn "Failed to find the SWISH::Filter module.  Only processing text/* content.\n$@\n";
@@ -1607,63 +1335,4 @@ sub default_config {
         filter_content      => $filter_sub,
         filter_object       => $filter,
     };
-}
-
-
-#=================================================================================
-# swish_filter
-# returns a subroutine for filtering with SWISH::Filter -- for use in config files
-#
-#---------------------------------------------------------------------------------
-
-sub swish_filter {
-
-
-    require SWISH::Filter;
-
-    my $filter = SWISH::Filter->new; # closure
-
-    my $filter_sub = sub {
-        my ( $uri, $server, $response, $content_ref ) = @_;
-
-        my $content_type = $response->content_type;
-        # Ignore text/* content type -- no need to filter
-        if (  $content_type =~ m!^text/! ) {
-            $server->{counts}{$content_type}++;
-            return 1;
-        }
-
-        my $doc = $filter->convert(
-            document     => $content_ref,
-            name         => $response->base,
-            content_type => $content_type,
-        );
-
-        return 1 unless $doc; # so just proceed as if not using filter
-
-        if ( $doc->is_binary ) {  # ignore "binary" files (not text/* mime type)
-            die "Skipping " . $response->base . " due to content type: " . $doc->content_type ." may be binary\n";
-        }
-
-        # nicer to use **char...
-        $$content_ref = ${$doc->fetch_doc};
-
-        # let's see if we can set the parser.
-        $server->{parser_type} = $doc->swish_parser_type || '';
-
-        $server->{counts}{"$content_type->" . $doc->content_type}++;
-
-        return 1;
-    };
-
-    # This is used in HEAD request to test the content type ahead of time
-    my $response_sub = sub {
-        my ( $uri, $server, $response, $content_ref ) = @_;
-        my $content_type = $response->content_type;
-        return 1 if $content_type =~ m!^text/!;  # allow all text (assume don't want to filter)
-        return $filter->can_filter( $content_type );
-    };
-
-
-    return ( $filter_sub, $response_sub, $filter );
 }
