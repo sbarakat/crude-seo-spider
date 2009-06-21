@@ -98,8 +98,6 @@ my @config_options = qw(
 );
 my %valid_config_options = map { $_ => 1 } @config_options;
 
-
-
 use constant MAX_SIZE       => 5_000_000;   # Max size of document to fetch
 use constant MAX_WAIT_TIME  => 30;          # request time.
 
@@ -120,9 +118,12 @@ sub UNIVERSAL::userinfo { '' };
 
     my $config = shift || 'SwishSpiderConfig.pl';
 
-    if ( lc( $config ) eq 'default' ) {
+    if ( lc( $config ) eq 'default' )
+    {
         @servers = default_urls();
-    } else {
+    }
+    else
+    {
         do $config or die "Failed to read $0 configuration parameters '$config' $! $@";
 
         die "$0: config file '$config' failed to set \@servers array\n"
@@ -131,16 +132,16 @@ sub UNIVERSAL::userinfo { '' };
         die "$0: config file '$config' did not set \@servers array to contain a hash\n"
             unless ref $servers[0] eq 'HASH';
 
-
         # Check config options
-        for my $server ( @servers ) {
-            for ( keys %$server ) {
+        for my $server ( @servers )
+        {
+            for ( keys %$server )
+            {
                 warn "$0: ** Warning: config option [$_] is unknown.  Perhaps misspelled?\n"
                     unless $valid_config_options{$_}
             }
         }
     }
-
 
     print STDERR "$0: Reading parameters from '$config'\n" unless $ENV{SPIDER_QUIET};
 
@@ -152,20 +153,20 @@ sub UNIVERSAL::userinfo { '' };
     my %validated;
     my %bad_links;
 
-    for my $s ( @servers ) {
-        if ( !$s->{base_url} ) {
+    for my $s ( @servers )
+    {
+        if ( !$s->{base_url} )
+        {
             die "You must specify 'base_url' in your spider config settings\n";
         }
 
         # Merge in default config?
         $s = { %{ default_config() }, %$s } if $s->{use_default_config};
 
-
         # Now, process each URL listed
-
         my @urls = ref $s->{base_url} eq 'ARRAY' ? @{$s->{base_url}} :( $s->{base_url});
-        for my $url ( @urls ) {
-
+        for my $url ( @urls )
+        {
             # purge config options -- used when base_url is an array
             $valid_config_options{$_} ||  delete $s->{$_} for keys %$s;
 
@@ -175,9 +176,11 @@ sub UNIVERSAL::userinfo { '' };
     }
 
 
-    if ( %bad_links ) {
+    if ( %bad_links )
+    {
         print STDERR "\nBad Links:\n\n";
-        foreach my $page ( sort keys %bad_links ) {
+        foreach my $page ( sort keys %bad_links )
+        {
             print STDERR "On page: $page\n";
             printf(STDERR " %-40s  %s\n", $_, $validated{$_} ) for @{$bad_links{$page}};
             print STDERR "\n";
@@ -193,15 +196,11 @@ sub UNIVERSAL::userinfo { '' };
 # for each URL listed in base_url
 #
 #----------------------------------------------------------------------------------
-
-
-sub process_server {
+sub process_server
+{
     my $server = shift;
 
-
-
     # set defaults
-
 
     # Set debug options.
     $server->{debug} =
@@ -210,7 +209,8 @@ sub process_server {
             : ($server->{debug} || 0);
 
     # Convert to number
-    if ( $server->{debug} !~ /^\d+$/ ) {
+    if ( $server->{debug} !~ /^\d+$/ )
+    {
         my $debug = 0;
         $debug |= (exists $DEBUG_MAP{lc $_} 
             ? $DEBUG_MAP{lc $_} 
@@ -222,17 +222,13 @@ sub process_server {
         $server->{debug} = $debug;
     }
 
-
-
     $server->{quiet} ||= $ENV{SPIDER_QUIET} || 0;
-
 
     # Lame Microsoft
     $URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
 
     $server->{max_size} = MAX_SIZE unless defined $server->{max_size};
     die "max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
-
 
     $server->{max_wait_time} ||= MAX_WAIT_TIME;
     die "max_wait_time parameter '$server->{max_wait_time}' must be a number\n" if $server->{max_wait_time} !~ /^\d+$/;
@@ -241,31 +237,27 @@ sub process_server {
     $server->{credential_timeout} = 30 unless exists $server->{credential_timeout};
     die "credential_timeout '$server->{credential_timeout}' must be a number\n" if defined $server->{credential_timeout} && $server->{credential_timeout} !~ /^\d+$/;
 
-
-
-
-
     $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
     $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
 
     die "max_depth parameter '$server->{max_depth}' must be a number\n" if defined $server->{max_depth} && $server->{max_depth} !~ /^\d+/;
 
-
-    for ( qw/ test_url test_response filter_content/ ) {
+    for ( qw/ test_url test_response filter_content/ )
+    {
         next unless $server->{$_};
         $server->{$_} = [ $server->{$_} ] unless ref $server->{$_} eq 'ARRAY';
         my $n;
-        for my $sub ( @{$server->{$_}} ) {
+        for my $sub ( @{$server->{$_}} )
+        {
             $n++;
             die "Entry number $n in $_ is not a code reference\n" unless ref $sub eq 'CODE';
         }
     }
 
-
-
     my $start = time;
 
-    if ( $server->{skip} ) {
+    if ( $server->{skip} )
+    {
         print STDERR "Skipping Server Config: $server->{base_url}\n" unless $server->{quiet};
         return;
     }
@@ -273,33 +265,27 @@ sub process_server {
     require "HTTP/Cookies.pm" if $server->{use_cookies};
     require "Digest/MD5.pm" if $server->{use_md5};
 
-
     # set starting URL, and remove any specified fragment
     my $uri = URI->new( $server->{base_url} );
     $uri->fragment(undef);
 
-    if ( $uri->userinfo ) {
+    if ( $uri->userinfo )
+    {
         die "Can't specify parameter 'credentials' because base_url defines them\n"
             if $server->{credentials};
         $server->{credentials} = $uri->userinfo;
         $uri->userinfo( undef );
     }
 
-
     print STDERR "\n -- Starting to spider: $uri --\n" if $server->{debug};
 
-
-
     # set the starting server name (including port) -- will only spider on server:port
-
 
     # All URLs will end up with this host:port
     $server->{authority} = $uri->canonical->authority;
 
     # All URLs must match this scheme ( Jan 22, 2002 - spot by Darryl Friesen )
     $server->{scheme} = $uri->scheme;
-
-
 
     # Now, set the OK host:port names
     $server->{same} = [ $uri->canonical->authority || '' ];
@@ -308,29 +294,21 @@ sub process_server {
 
     $server->{same_host_lookup} = { map { $_, 1 } @{$server->{same}} };
 
-
-
-
     # set time to end
-
     $server->{max_time} = $server->{max_time} * 60 + time
         if $server->{max_time};
 
-
     # set default agent for log files
-
     $server->{agent} ||= 'swish-e http://swish-e.org/';
 
-
     # get a user agent object
-
-
     my $ua;
 
-
     # set the delay
-    unless ( defined $server->{delay_sec} ) {
-        if ( defined $server->{delay_min} && $server->{delay_min} =~ /^\d+\.?\d*$/ ) {
+    unless ( defined $server->{delay_sec} )
+    {
+        if ( defined $server->{delay_min} && $server->{delay_min} =~ /^\d+\.?\d*$/ )
+        {
             # change if ever move to Time::HiRes
             $server->{delay_sec} = int ($server->{delay_min} * 60);
         }
@@ -339,14 +317,15 @@ sub process_server {
     }
     $server->{delay_sec} = 5 unless $server->{delay_sec} =~ /^\d+$/;
 
-
-    if ( $server->{ignore_robots_file} ) {
+    if ( $server->{ignore_robots_file} )
+    {
         $ua = LWP::UserAgent->new;
         return unless $ua;
         $ua->agent( $server->{agent} );
         $ua->from( $server->{email} );
-
-    } else {
+    }
+    else
+    {
         $ua = LWP::RobotUA->new( $server->{agent}, $server->{email} );
         return unless $ua;
         $ua->delay( 0 );  # handle delay locally.
@@ -356,27 +335,27 @@ sub process_server {
     # comment out so can find http-equiv charset
     # $ua->parse_head( 0 ) if $server->{ignore_robots_file} || $server->{ignore_robots_headers};
 
-
     # Set the timeout - used to only for windows and used alarm, but this
     # did not always works correctly.  Hopefully $ua->timeout works better in
     # current versions of LWP (before DNS could block forever)
 
     $ua->timeout( $server->{max_wait_time} );
 
-
-
     $server->{ua} = $ua;  # save it for fun.
     # $ua->parse_head(0);   # Don't parse the content
 
     $ua->cookie_jar( HTTP::Cookies->new ) if $server->{use_cookies};
 
-    if ( $server->{keep_alive} ) {
-
-        if ( $ua->can( 'conn_cache' ) ) {
+    if ( $server->{keep_alive} )
+    {
+        if ( $ua->can( 'conn_cache' ) )
+        {
             my $keep_alive = $server->{keep_alive} =~ /^\d+$/ ? $server->{keep_alive} : 1;
             $ua->conn_cache( { total_capacity => $keep_alive } );
 
-        } else {
+        }
+        else
+        {
             delete $server->{keep_alive};
             warn "Can't use keep-alive: conn_cache method not available\n";
         }
@@ -385,14 +364,13 @@ sub process_server {
     # Disable HEAD requests if there's no reason to use them
     # Keep_alives is questionable because even without keep alives
     # it might be faster to do a HEAD than a partial GET.
-
     if ( $server->{use_head_requests} && !$server->{keep_alive} ||
-        !( $server->{test_response} || $server->{max_size} ) ) {
+        !( $server->{test_response} || $server->{max_size} ) )
+    {
 
         warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and either test_response or max_size options\n';
         delete $server->{use_head_requests};
     }
-
 
     # uri, parent, depth
     eval { spider( $server, $uri ) };
@@ -402,22 +380,22 @@ sub process_server {
 
     return if $server->{quiet};
 
-
     $start = time - $start;
     $start++ unless $start;
 
     my $max_width = 0;
     my $max_num = 0;
-    for ( keys %{$server->{counts}} ) {
+    for ( keys %{$server->{counts}} )
+    {
         $max_width = length if length > $max_width;
         my $val = commify( $server->{counts}{$_} );
         $max_num = length $val if length $val > $max_num;
     }
 
-
     print STDERR "\nSummary for: $server->{base_url}\n";
 
-    for ( sort keys %{$server->{counts}} ) {
+    for ( sort keys %{$server->{counts}} )
+    {
         printf STDERR "%${max_width}s: %${max_num}s  (%0.1f/sec)\n",
             $_,
             commify( $server->{counts}{$_} ),
@@ -425,14 +403,13 @@ sub process_server {
     }
 }
 
-
 #----------- Non recursive spidering ---------------------------
 # Had problems with some versions of LWP where memory was not freed
 # after the URI objects went out of scope, so instead just maintain
 # a list of URI.
 # Should move this to a DBM or database.
-
-sub spider {
+sub spider
+{
     my ( $server, $uri ) = @_;
 
     # Validate the first link, just in case
@@ -440,7 +417,8 @@ sub spider {
 
     my @link_array = [ $uri, '', 0 ];
 
-    while ( @link_array ) {
+    while ( @link_array )
+    {
 
         die $server->{abort} if $abort || $server->{abort};
 
@@ -454,19 +432,17 @@ sub spider {
         my $new_links = process_link( $server, $uri->clone, $parent, $depth );
 
         push @link_array, map { [ $_, $uri, $depth+1 ] } @$new_links if $new_links;
-
     }
 }
 
 #---------- Delay a request based on the delay time -------------
-
-sub delay_request {
+sub delay_request
+{
     my ( $server ) = @_;
 
-
     # Here's a place to log the type of connection
-
-    if ( $server->{keep_alive_connection} ) {
+    if ( $server->{keep_alive_connection} )
+    {
         $server->{counts}{'Connection: Keep-Alive'}++;
         # no delay on keep-alives
         return;
@@ -477,8 +453,6 @@ sub delay_request {
     # return if no delay or first request
     return if !$server->{delay_sec} || !$server->{last_response_time};
 
-
-
     my $wait = $server->{delay_sec} - ( time - $server->{last_response_time} );
 
     return unless $wait > 0;
@@ -486,7 +460,6 @@ sub delay_request {
     print STDERR "sleeping $wait seconds\n" if $server->{debug} & DEBUG_URL;
     sleep( $wait );
 }
-
 
 #================================================================================
 # process_link()  - process a link from the list
@@ -507,10 +480,9 @@ sub delay_request {
 # Very ugly as this is some of the oldest code
 #
 #---------------------------------------------------------------------------------
-
-sub process_link {
+sub process_link
+{
     my ( $server, $uri, $parent, $depth ) = @_;
-
 
     $server->{counts}{'Unique URLs'}++;
 
@@ -520,17 +492,13 @@ sub process_link {
     die "$0: Time Limit Exceeded\n"
         if $server->{max_time} && $server->{max_time} < time;
 
-
     # clean up some per-request crap.
     # Really should just subclass the response object!
     $server->{no_contents} = 0;
     $server->{no_index} = 0;
     $server->{no_spider} = 0;
 
-
-
     # Make request object for this URI
-
     my $request = HTTP::Request->new('GET', $uri );
 
     ## HTTP::Message uses Compress::Zlib, and Gisle responded Jan 8, 07 that it's safe to test
@@ -542,33 +510,30 @@ sub process_link {
     push @encodings, 'x-bzip2' unless $@;
 
     $request->header('Accept-encoding', join ', ', @encodings ) if @encodings;
-
-
     $request->header('Referer', $parent ) if $parent;
-
 
     # Set basic auth if defined - use URI specific first, then credentials
     # this doesn't track what should have authorization
     my $last_auth;
-    if ( $server->{last_auth} ) {
+    if ( $server->{last_auth} )
+    {
         my $path = $uri->path;
         $path =~ s!/[^/]*$!!;
         $last_auth = $server->{last_auth}{auth} if $server->{last_auth}{path} eq $path;
     }
 
 
-    if ( my ( $user, $pass ) = split /:/, ( $last_auth || $uri->userinfo || $server->{credentials} || '' ) ) {
+    if ( my ( $user, $pass ) = split /:/, ( $last_auth || $uri->userinfo || $server->{credentials} || '' ) )
+    {
         $request->authorization_basic( $user, $pass );
     }
 
-
     my $response;
-
 
     delete $server->{response_checked};  # to keep from checking more than once
 
-
-    if ( $server->{use_head_requests} ) {
+    if ( $server->{use_head_requests} )
+    {
         $request->method('HEAD');
 
         # This is ugly in what it can return.  It's can be recursive.
@@ -581,18 +546,13 @@ sub process_link {
         $request->method('GET');
     }
 
-
     # Now make GET request
     $response = make_request( $request, $server, $uri, $parent, $depth );
     return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
-
     # Now we have a $response object with content
-
     return process_content( $response, $server, $uri, $parent, $depth );
-
 }
-
 
 #===================================================================================
 # make_request -- 
@@ -609,10 +569,9 @@ sub process_link {
 #
 # Yes it's a mess -- got pulled out of other code when adding HEAD requests
 #-----------------------------------------------------------------------------------
-
-sub make_request {
+sub make_request
+{
     my ( $request, $server, $uri, $parent, $depth ) = @_;
-
 
     my $response;
     my $response_aborted_msg;
@@ -620,31 +579,27 @@ sub make_request {
 
     my $ua = $server->{ua};
 
-    if ( $request->method eq 'GET' ) {
-
+    if ( $request->method eq 'GET' )
+    {
         # When making a GET request this gets called for every chunk returned
         # from the webserver (well, from the OS).  No idea how bit it will be.
         #
         my $total_length = 0;
 
-        my $callback = sub {
+        my $callback = sub
+        {
             my ( $content, $response ) = @_;
 
             # First time, check response - this can die()
             check_response( $response, $server, $uri )
                 unless $server->{response_checked}++;
 
-
             # In case didn't return a content-length header
             $total_length += length $content;
             check_too_big( $response, $server, $total_length ) if $server->{max_size};
 
-
-
             $response->add_content( $content );
         };
-
-
 
         ## Make Request ##
 
@@ -655,13 +610,14 @@ sub make_request {
         # Check for callback death:
         # If the LWP callback aborts
 
-        if ( $response->header('client-aborted') ) {
+        if ( $response->header('client-aborted') )
+        {
             $response_aborted_msg = $response->header('X-Died') || 'unknown';
             $killed_connection++;  # so we will delay
         }
-
-    } else {
-
+    }
+    else
+    {
         # Make a HEAD request
         $response = $ua->simple_request( $request );
 
@@ -676,19 +632,18 @@ sub make_request {
     # save the request completion time for delay between requests
     $server->{last_response_time} = time;
 
-
     # Ok, did the request abort for some reason?  (response checker called die() )
-
-    if ( $response_aborted_msg ) {
+    if ( $response_aborted_msg )
+    {
         # Log unless it's the callback (because the callback already logged it)
-        if ( $response_aborted_msg !~ /test_response/ ) {
+        if ( $response_aborted_msg !~ /test_response/ )
+        {
             $server->{counts}{Skipped}++;
 
             # Not really sure why request aborted.  Let's try and make the error message
             # a bit cleaner.
             print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n" if $server->{debug}&DEBUG_SKIPPED;
         }
-
 
         # Aborting in the callback breaks the connection (so tested on Apache)
         # even if all the data was transmitted.
@@ -698,8 +653,6 @@ sub make_request {
         delete $server->{keep_alive_connection} if $killed_connection;
         return;
     }
-
-
 
     # Look for connection.  Assume it's a keep-alive unless we get a Connection: close
     # header.  Some server errors (on Apache) will close the connection, but they
@@ -711,14 +664,10 @@ sub make_request {
     my $connection = $response->header('Connection') || 'Keep-alive';  # assume keep-alive
     $server->{keep_alive_connection} =  !$killed_connection && $server->{keep_alive} && $connection !~ /close/i;
 
-
-
     # Did a callback return abort?
     return if $server->{abort};
 
-
     # Clean up the URI so passwords don't leak
-
     $response->request->uri->userinfo( undef ) if $response->request;
     $uri->userinfo( undef );
 
@@ -730,23 +679,17 @@ sub make_request {
                   "\n^^^^^^^^^^^^^^^ END HEADERS ^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n"
        if $server->{debug} & DEBUG_HEADERS;
 
-
-
     # Deal with failed responses
-
     return failed_response( $response, $server, $uri, $parent, $depth )
         unless $response->is_success;
-
 
     # Don't log HEAD requests
     return $request if $request->method eq 'HEAD';
 
     # Log if requested
 
-    log_response( $response, $server, $uri, $parent, $depth );
-        #if $server->{debug} & DEBUG_URL;
-
-
+    log_response( $response, $server, $uri, $parent, $depth )
+        if $server->{debug} & DEBUG_URL;
 
     # Check for meta refresh
     # requires that $ua->parse_head() is enabled (the default)
@@ -754,17 +697,14 @@ sub make_request {
     return redirect_response( $response, $server, $uri, $parent, $depth, $1, 'meta refresh' )
         if $response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/;
 
-
     return $response;
 }
 
-
 #===================================================================
 # check_response -- after resonse comes back from server
-#
-#
 #-------------------------------------------------------------------
-sub check_response {
+sub check_response
+{
     my ( $response, $server, $uri ) = @_;
 
     return unless $response->is_success;  # 2xx response.
@@ -772,14 +712,16 @@ sub check_response {
     # Cache user/pass if entered from the keyboard or callback function (as indicated by the realm)
     # do here so we know it is correct
 
-    if ( $server->{cur_realm} && $uri->userinfo ) {
+    if ( $server->{cur_realm} && $uri->userinfo )
+    {
         my $key = $uri->canonical->host_port . ':' . $server->{cur_realm};
         $server->{auth_cache}{$key} =  $uri->userinfo;
 
         # not too sure of the best logic here
         my $path = $uri->path;
         $path =~ s!/[^/]*$!!;
-        $server->{last_auth} = {
+        $server->{last_auth} =
+        {
             path => $path,
             auth => $uri->userinfo,
         };
@@ -787,15 +729,14 @@ sub check_response {
 
     # check for document too big.
     check_too_big( $response, $server ) if $server->{max_size};
-
 }
 
 #=====================================================================
 # check_too_big -- see if document is too big
 # Die if it is too big.
 #--------------------------------------------------------------------
-
-sub check_too_big {
+sub check_too_big
+{
     my ( $response, $server, $length ) = @_;
 
     $length ||= $response->content_length || 0;
@@ -809,27 +750,27 @@ sub check_too_big {
 # failed_response -- deal with a non 2xx response
 #
 #------------------------------------------------------------------------
-sub failed_response {
+sub failed_response
+{
     my ( $response, $server, $uri, $parent, $depth ) = @_;
 
     my $links;
 
     # Do we need to authorize?
-    if ( $response->code == 401 ) {
+    if ( $response->code == 401 )
+    {
         # This will log the error
         #$links = authorize( $response, $server, $uri, $parent, $depth );
         return $links if ref $links or !$links;
     }
 
-
     # Are we rejected because of robots.txt?
-
-    if ( $response->status_line =~ 'robots.txt' ) {
+    if ( $response->status_line =~ 'robots.txt' )
+    {
         print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n" if $server->{debug}&DEBUG_SKIPPED;
         $server->{counts}{'robots.txt'}++;
         return;
     }
-
 
     # Look for redirect
     return redirect_response( $response, $server, $uri, $parent, $depth )
@@ -840,7 +781,6 @@ sub failed_response {
     validate_link( $server, $uri, $parent, $response )
         if $server->{validate_links};
 
-
     # Otherwise, log if needed and then return.
     log_response( $response, $server, $uri, $parent, $depth )
         if $server->{debug} & DEBUG_FAILED;
@@ -848,31 +788,32 @@ sub failed_response {
     return;
 }
 
-
 #=============================================================================
 # redirect_response -- deal with a 3xx redirect
 #
 # Returns link to follow
 #
 #----------------------------------------------------------------------------
-sub redirect_response {
+sub redirect_response
+{
     my ( $response, $server, $uri, $parent, $depth, $location, $description ) = @_;
 
     $location ||= $response->header('location');
-    unless ( $location ) {
+    unless ( $location )
+    {
         print STDERR "Warning: $uri returned a redirect without a Location: header\n";
         return;
     }
 
     $description ||= 'Location';
 
-
     # This should NOT be needed, but some servers are broken
     # and don't return absolute links.
     # and this may even break things
     my $u = URI->new_abs( $location, $response->base );
 
-    if ( $u->canonical eq $uri->canonical ) {
+    if ( $u->canonical eq $uri->canonical )
+    {
         print STDERR "Warning: $uri redirects to itself!.\n";
         return;
     }
@@ -880,12 +821,12 @@ sub redirect_response {
     # make sure it's ok:
     return unless check_link( $u, $server, $response->base, '(redirect)', $description  );
 
-
     # make recursive request
     # This will not happen because the check_link records that the link has been seen.
     # But leave here just in case
 
-    if ( $server->{_request}{redirects}++ > MAX_REDIRECTS ) {
+    if ( $server->{_request}{redirects}++ > MAX_REDIRECTS )
+    {
         warn "Exceeded redirect limimt: perhaps a redirect loop: $uri on parent page: $parent\n";
         return;
     }
@@ -895,19 +836,17 @@ sub redirect_response {
     $server->{counts}{"$description Redirects"}++;
     my $links = process_link( $server, $u, $parent, $depth );
     $server->{_request}{redirects}-- if  $server->{_request}{redirects};
+
     return $links;
-
 }
-
 
 #==================================================================================
 # Log a response
-
-sub log_response {
+sub log_response
+{
     my ( $response, $server, $uri, $parent, $depth ) = @_;
 
     # Log the response
-
     print STDERR '>> ',
       join( ' ',
             ( $response->is_success ? '+Fetched' : '-Failed' ),
@@ -929,17 +868,18 @@ sub log_response {
 # returns an array ref of new links to follow
 #
 #-----------------------------------------------------------------------------
-
-sub process_content { 
+sub process_content
+{
     my ( $response, $server, $uri, $parent, $depth ) = @_;
-
 
     # Check for meta robots tag
     # -- should probably be done in request sub to avoid fetching docs that are not needed
     # -- also, this will not not work with compression $$$ check this
 
-    unless ( $server->{ignore_robots_file}  || $server->{ignore_robots_headers} ) {
-        if ( my $directives = $response->header('X-Meta-ROBOTS') ) {
+    unless ( $server->{ignore_robots_file}  || $server->{ignore_robots_headers} )
+    {
+        if ( my $directives = $response->header('X-Meta-ROBOTS') )
+        {
             my %settings = map { lc $_, 1 } split /\s*,\s*/, $directives;
             $server->{no_contents}++ if exists $settings{nocontents};  # an extension for swish
             $server->{no_index}++    if exists $settings{noindex};
@@ -948,11 +888,11 @@ sub process_content {
     }
 
     # make sure content is unique - probably better to chunk into an MD5 object above
-
-    if ( $server->{use_md5} ) {
+    if ( $server->{use_md5} )
+    {
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
-        if ( $visited{ $digest } ) {
-
+        if ( $visited{ $digest } )
+        {
             print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n"
                 if $server->{debug} & DEBUG_SKIPPED;
 
@@ -963,11 +903,10 @@ sub process_content {
         $visited{ $digest } = $uri;
     }
 
-
-
     my $content = $response->decoded_content;
 
-    unless ( $content ) {
+    unless ( $content )
+    {
         my $empty = '';
         output_content( $server, \$empty, $uri, $response )
             unless $server->{no_index};
@@ -975,27 +914,23 @@ sub process_content {
     }
 
     # Extract out links (if not too deep)
-
     my $links_extracted = extract_links( $server, \$content, $response )
         unless defined $server->{max_depth} && $depth >= $server->{max_depth};
 
-
     # Index the file
-
-    if ( $server->{no_index} ) {
+    if ( $server->{no_index} )
+    {
         $server->{counts}{Skipped}++;
         print STDERR "-Skipped indexing $uri some callback set 'no_index' flag\n" if $server->{debug}&DEBUG_SKIPPED;
-
-    } else {
+    }
+    else
+    {
         output_content( $server, \$content, $uri, $response )
             unless $server->{no_index};
     }
 
-
-
     return $links_extracted;
 }
-
 
 #==============================================================================================
 #  Extract links from a text/html page
@@ -1006,15 +941,16 @@ sub process_content {
 #       $response - response object
 #
 #----------------------------------------------------------------------------------------------
-
-sub extract_links {
+sub extract_links
+{
     my ( $server, $content, $response ) = @_;
 
     return unless $response->header('content-type') &&
                      $response->header('content-type') =~ m[^text/html];
 
     # allow skipping.
-    if ( $server->{no_spider} ) {
+    if ( $server->{no_spider} )
+    {
         print STDERR '-Links not extracted: ', $response->request->uri->canonical, " some callback set 'no_spider' flag\n" if $server->{debug}&DEBUG_SKIPPED;
         return;
     }
@@ -1023,10 +959,8 @@ sub extract_links {
 
     my @links;
 
-
     my $base = $response->base;
     $visited{ $base }++;  # $$$ come back and fix this (see 4/20/03 lwp post)
-
 
     print STDERR "\nExtracting links from ", $response->request->uri, ":\n" if $server->{debug} & DEBUG_LINKS;
 
@@ -1035,7 +969,8 @@ sub extract_links {
 
     my %skipped_tags;
 
-    for ( $p->links ) {
+    for ( $p->links )
+    {
         my ( $tag, %attr ) = @$_;
 
         # which tags to use ( not reported in debug )
@@ -1044,15 +979,16 @@ sub extract_links {
 
         print STDERR "\nLooking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
 
-        unless ( $server->{link_tags_lookup}{$tag} ) {
-
+        unless ( $server->{link_tags_lookup}{$tag} )
+        {
             # each tag is reported only once per page
             print STDERR
                 "   <$tag> skipped because not one of (",
                 join( ',', @{$server->{link_tags}} ),
                 ")\n" if $server->{debug} & DEBUG_LINKS && !$skipped_tags{$tag}++;
 
-            if ( $server->{validate_links} && $tag eq 'img' && $attr{src} ) {
+            if ( $server->{validate_links} && $tag eq 'img' && $attr{src} )
+            {
                 my $img = URI->new_abs( $attr{src}, $base );
                 validate_link( $server, $img, $base );
             }
@@ -1064,17 +1000,14 @@ sub extract_links {
         my $links = $HTML::Tagset::linkElements{$tag};
         $links = [$links] unless ref $links;
 
-
         my $found;
 
-
         # Now, check each attribut to see if a link exists
-
-        for my $attribute ( @$links ) {
-            if ( $attr{ $attribute } ) {  # ok tag
-
+        for my $attribute ( @$links )
+        {
+            if ( $attr{ $attribute } ) # ok tag
+            {
                 # Create a URI object
-
                 my $u = URI->new_abs( $attr{$attribute},$base );
 
                 next unless check_link( $u, $server, $base, $tag, $attribute );
@@ -1086,7 +1019,8 @@ sub extract_links {
         }
 
 
-        if ( !$found && $server->{debug} & DEBUG_LINKS ) {
+        if ( !$found && $server->{debug} & DEBUG_LINKS )
+        {
             print STDERR "  tag did not include any links to follow or is a duplicate\n";
         }
 
@@ -1094,12 +1028,8 @@ sub extract_links {
 
     print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n" if $server->{debug} & DEBUG_INFO;
 
-
     return \@links;
 }
-
-
-
 
 #=============================================================================
 # This function check's if a link should be added to the list to spider
@@ -1115,21 +1045,19 @@ sub extract_links {
 #   can be done here.
 #
 #------------------------------------------------------------------------------
-sub check_link {
+sub check_link
+{
     my ( $u, $server, $base, $tag, $attribute ) = @_;
 
     $tag ||= '';
     $attribute ||= '';
 
-
     # Kill the fragment
     $u->fragment( undef );
 
-
     # Here we make sure we are looking at a link pointing to the correct (or equivalent) host
-
-    unless ( $server->{scheme} eq $u->scheme && $server->{same_host_lookup}{$u->canonical->authority||''} ) {
-
+    unless ( $server->{scheme} eq $u->scheme && $server->{same_host_lookup}{$u->canonical->authority||''} )
+    {
         print STDERR qq[ ?? <$tag $attribute="$u"> skipped because different host\n] if $server->{debug} & DEBUG_LINKS;
         $server->{counts}{'Off-site links'}++;
         validate_link( $server, $u, $base ) if $server->{validate_links};
@@ -1140,12 +1068,10 @@ sub check_link {
 
     # Don't add the link if already seen  - these are so common that we don't report
     # Might be better to do something like $visited{ $u->path } or $visited{$u->host_port}{$u->path};
-
-
-    if ( $visited{ $u->canonical }++ ) {
+    if ( $visited{ $u->canonical }++ )
+    {
         #$server->{counts}{Skipped}++;
         $server->{counts}{Duplicates}++;
-
 
         # Just so it's reported for all pages
         if ( $server->{validate_links} && $validated{$u->canonical} ) {
@@ -1158,7 +1084,6 @@ sub check_link {
     return 1;
 }
 
-
 #=============================================================================
 # This function is used to validate links that are off-site.
 #
@@ -1166,15 +1091,14 @@ sub check_link {
 #   off-site links at the same time as indexing.  Just because we can.
 #
 #------------------------------------------------------------------------------
-sub validate_link {
+sub validate_link
+{
     my ($server, $uri, $base, $response ) = @_;
 
     $base = URI->new( $base ) unless ref $base;
     $uri = URI->new_abs($uri, $base) unless ref $uri;
 
-
-   # Already checked?
-
+    # Already checked?
     if ( exists $validated{ $uri->canonical } )
     {
         # Add it to the list of bad links on that page if it's a bad link.
@@ -1186,7 +1110,8 @@ sub validate_link {
 
     $validated{ $uri->canonical } = 0;  # mark as checked and ok.
 
-    unless ( $response ) {
+    unless ( $response )
+    {
         my $ua = LWP::UserAgent->new(timeout =>  $server->{max_wait_time} );
         my $request = HTTP::Request->new('HEAD', $uri->canonical );
         $response = $ua->simple_request( $request );
@@ -1207,39 +1132,41 @@ sub validate_link {
 # output_content -- formats content for swish-e
 #
 #-----------------------------------------------------------------------------------
-
-sub output_content {
+sub output_content
+{
     my ( $server, $content, $uri, $response ) = @_;
 
     $server->{indexed}++;
 
-    unless ( length $$content ) {
+    unless ( length $$content )
+    {
         print STDERR "Warning: document '", $response->request->uri, "' has no content\n";
         $$content = ' ';
     }
-
 
     ## Now, either need to re-encode into the original charset,
     # or remove any charset from <meta> tags and then return utf8.
     # HTTP::Message uses a different method to extract out the charset,
     # but should result in the same value.
-    for ( $response->header('content-type') ){
+    for ( $response->header('content-type') )
+    {
         $server->{charset} = $1 if /\bcharset=([^;]+)/;
     }
     # Re-encode the data for outside of Perl
-    eval {
+    eval
+    {
         # Need to only require Encode here?
         $$content = Encode::encode( $server->{charset}, $$content )
             if $server->{charset};
     };
-    if ( $@ ) {
+    if ( $@ )
+    {
         print STDERR "Warning: document '", $response->request->uri, "' could not be encoded to charset '$server->{charset}'\n";
         delete $server->{charset};
     }
 
     $server->{counts}{'Total Bytes'} += length $$content;
     $server->{counts}{'Total Docs'}++;
-
 
     # ugly and maybe expensive, but perhaps more portable than "use bytes"
     my $bytecount = length pack 'C0a*', $$content;
@@ -1259,14 +1186,15 @@ sub output_content {
         if $response->last_modified;
 
     # Set the parser type if specified by filtering
-    if ( my $type = delete $server->{parser_type} ) {
+    if ( my $type = delete $server->{parser_type} )
+    {
         $headers .= "Document-Type: $type\n";
-
-    } elsif ( $response->content_type =~ m!^text/(html|xml|plain)! ) {
+    }
+    elsif ( $response->content_type =~ m!^text/(html|xml|plain)! )
+    {
         $type = $1 eq 'plain' ? 'txt' : $1;
         $headers .= "Document-Type: $type*\n";
     }
-
 
     $headers .= "No-Contents: 1\n" if $server->{no_contents};
     #print "$headers\n$$content";
@@ -1280,17 +1208,18 @@ sub output_content {
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 }
 
-
-sub commify {
+sub commify
+{
     local $_  = shift;
     1 while s/^([-+]?\d+)(\d{3})/$1,$2/;
     return $_;
 }
 
-sub default_urls {
-
+sub default_urls
+{
     my $validate = 0;
-    if ( @ARGV && $ARGV[0] eq 'validate' ) {
+    if ( @ARGV && $ARGV[0] eq 'validate' )
+    {
         shift @ARGV;
         $validate = 1;
     }
@@ -1304,28 +1233,27 @@ sub default_urls {
     $config->{validate}++ if $validate;
 
     return $config;
-
 }
 
 # Returns a default config hash
-
-sub default_config {
-
+sub default_config
+{
     ## See if we have any filters
-
     my ($filter_sub, $response_sub, $filter);
 
-    if ( $@ ) {
-
+    if ( $@ )
+    {
         warn "Failed to find the SWISH::Filter module.  Only processing text/* content.\n$@\n";
 
-        $response_sub = sub {
+        $response_sub = sub
+        {
             my $content_type = $_[2]->content_type;
             return $content_type =~ m!^text/!;
         }
     }
 
-    return {
+    return
+    {
         email               => 'swish@user.failed.to.set.email.invalid',
         link_tags           => [qw/ a frame /],
         keep_alive          => 1,
