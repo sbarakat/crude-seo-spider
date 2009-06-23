@@ -175,7 +175,6 @@ sub UNIVERSAL::userinfo { '' };
         }
     }
 
-
     if (%bad_links)
     {
         print STDERR "\nBad Links:\n\n";
@@ -418,7 +417,7 @@ sub spider
 
     while (@link_array)
     {
-        die $server->{abort} if $abort || $server->{abort};
+        die $server->{abort} if $abort;
 
         my ($uri, $parent, $depth) = @{shift @link_array};
 
@@ -490,12 +489,6 @@ sub process_link
     die "$0: Time Limit Exceeded\n"
         if $server->{max_time} && $server->{max_time} < time;
 
-    # clean up some per-request crap.
-    # Really should just subclass the response object!
-    $server->{no_contents} = 0;
-    $server->{no_index} = 0;
-    $server->{no_spider} = 0;
-
     # Make request object for this URI
     my $request = HTTP::Request->new('GET', $uri);
 
@@ -544,6 +537,39 @@ sub process_link
 
     # Now make GET request
     $response = make_request($request, $server, $uri, $parent, $depth);
+
+    # Deal with failed responses - non 2xx
+    if (!$response->is_success)
+    {
+        # Are we rejected because of robots.txt?
+        if ($response->status_line =~ 'robots.txt')
+        {
+            $server->{counts}{'robots.txt'}++;
+        }
+
+        # Look for redirect
+        elsif ($response->is_redirect)
+        {
+            redirect_response($response, $server, $uri, $parent, $depth);
+        }
+
+        # Report bad links (excluding those skipped by robots.txt)
+        # Not so sure about this being here for these links...
+        elsif ($server->{validate_links})
+        {
+            validate_link($server, $uri, $parent, $response);
+        }
+    }
+
+    # Don't log HEAD requests
+    #return $request if $request->method eq 'HEAD';
+
+    # Check for meta refresh
+    # requires that $ua->parse_head() is enabled (the default)
+    if ($response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/)
+    {
+        redirect_response($response, $server, $uri, $parent, $depth, $1, 'meta refresh');
+    }
 
     return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
@@ -658,46 +684,9 @@ sub make_request
     my $connection = $response->header('Connection') || 'Keep-alive';  # assume keep-alive
     $server->{keep_alive_connection} =  !$killed_connection && $server->{keep_alive} && $connection !~ /close/i;
 
-    # Did a callback return abort?
-    return if $server->{abort};
-
     # Clean up the URI so passwords don't leak
     $response->request->uri->userinfo(undef) if $response->request;
     $uri->userinfo(undef);
-
-    # Log if requested
-    log_response($response, $server, $uri, $parent, $depth, '');
-
-    # Deal with failed responses - non 2xx
-    if (!$response->is_success)
-    {
-        # Are we rejected because of robots.txt?
-        if ($response->status_line =~ 'robots.txt')
-        {
-            #print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n";# if $server->{debug}&DEBUG_SKIPPED;
-            $server->{counts}{'robots.txt'}++;
-            return;
-        }
-
-        # Look for redirect
-        return redirect_response($response, $server, $uri, $parent, $depth)
-            if $response->is_redirect;
-
-        # Report bad links (excluding those skipped by robots.txt)
-        # Not so sure about this being here for these links...
-        validate_link($server, $uri, $parent, $response)
-            if $server->{validate_links};
-
-        return;
-    }
-
-    # Don't log HEAD requests
-    return $request if $request->method eq 'HEAD';
-
-    # Check for meta refresh
-    # requires that $ua->parse_head() is enabled (the default)
-    return redirect_response($response, $server, $uri, $parent, $depth, $1, 'meta refresh')
-        if $response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/;
 
     return $response;
 }
@@ -805,17 +794,17 @@ sub process_content
     # Check for meta robots tag
     # -- should probably be done in request sub to avoid fetching docs that are not needed
     # -- also, this will not not work with compression $$$ check this
-
     unless ($server->{ignore_robots_file}  || $server->{ignore_robots_headers})
     {
         if (my $directives = $response->header('X-Meta-ROBOTS'))
         {
             my %settings = map { lc $_, 1 } split /\s*,\s*/, $directives;
-            $server->{no_contents}++ if exists $settings{nocontents};  # an extension for swish
-            $server->{no_index}++    if exists $settings{noindex};
-            $server->{no_spider}++   if exists $settings{nofollow};
         }
     }
+
+    my $status = ($response->status_line || $response->status || 'unknown status');
+    my $content = $response->decoded_content;
+    my $bytecount = length $content;
 
     # make sure content is unique - probably better to chunk into an MD5 object above
     if ($server->{use_md5})
@@ -823,11 +812,9 @@ sub process_content
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
         if ($visited{ $digest })
         {
-            print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n"
-                if $uri ne $visited{ $digest };
-
-            log_response($response, $server, $uri, $parent, $depth, "Same digest as $visited{ $digest }")
-                if $uri ne $visited{ $digest };
+            #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
+            log_response($status . ' Duplicate', $bytecount, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }")
+                if $uri ne $visited{ $digest } && $response->status_line =~ m/200 OK/i;
 
             $server->{counts}{Skipped}++;
             $server->{counts}{'MD5 Duplicates'}++;
@@ -836,31 +823,14 @@ sub process_content
         $visited{ $digest } = $uri;
     }
 
-    my $content = $response->decoded_content;
+    #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
+    log_response($status, $bytecount, $parent, $uri, $depth, '');
 
-    unless ($content)
-    {
-        my $empty = '';
-        #output_content($server, \$empty, $uri, $response)
-        #    unless $server->{no_index};
-        return;
-    }
+    return unless ($content);
 
     # Extract out links (if not too deep)
     my $links_extracted = extract_links($server, \$content, $response)
         unless defined $server->{max_depth} && $depth >= $server->{max_depth};
-
-    # Index the file
-    if ($server->{no_index})
-    {
-        $server->{counts}{Skipped}++;
-        print STDERR "-Skipped indexing $uri some callback set 'no_index' flag\n";# if $server->{debug}&DEBUG_SKIPPED;
-    }
-    else
-    {
-        #output_content($server, \$content, $uri, $response)
-        #    unless $server->{no_index};
-    }
 
     return $links_extracted;
 }
@@ -880,13 +850,6 @@ sub extract_links
 
     return unless $response->header('content-type') &&
                      $response->header('content-type') =~ m[^text/html];
-
-    # allow skipping.
-    if ($server->{no_spider})
-    {
-        print STDERR '-Links not extracted: ', $response->request->uri->canonical, " some callback set 'no_spider' flag\n";# if $server->{debug}&DEBUG_SKIPPED;
-        return;
-    }
 
     $server->{Spidered}++;
 
@@ -1061,41 +1024,19 @@ sub validate_link
 # Log a response
 sub log_response
 {
-    my ($response, $server, $uri, $parent, $depth, $msg) = @_;
+    my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
 
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
 
-    my $status = ($response->status_line || $response->status || 'unknown status');
-    my $length = ($response->content_length || '???');
-
-    my $content = $response->decoded_content;
-    my $bytecount = length $content;
-
     if ($msg)
     {
-        printf("%s - %-25s %10s %6s - %s => %s\n", $timestamp, $status, $msg, $bytecount, $parent, $uri);
+        printf("%s - %-27s %6s - %s => %s %s\n", $timestamp, $status, $bytecount, $parent, $uri, $msg);
     }
     else
     {
-        printf("%s - %-25s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
+        printf("%s - %-27s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
     }
-
-    return;
-
-    print '>> ',
-      join(' ',
-            ($response->is_success ? '+Fetched' : '-Failed'),
-            $depth,
-            "Cnt: $server->{counts}{'Unique URLs'}",
-            $response->request->method,
-            " $uri ",
-            ($response->status_line || $response->status || 'unknown status'),
-            ($response->content_type || 'Unknown content type'),
-            ($response->content_length || '???'),
-            "parent:$parent",
-            "depth:$depth",
-     ),"\n";
 }
 
 #===================================================================================
