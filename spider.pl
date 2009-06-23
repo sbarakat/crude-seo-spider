@@ -367,7 +367,6 @@ sub process_server
     if ( $server->{use_head_requests} && !$server->{keep_alive} ||
         !( $server->{test_response} || $server->{max_size} ) )
     {
-
         warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and either test_response or max_size options\n';
         delete $server->{use_head_requests};
     }
@@ -419,7 +418,6 @@ sub spider
 
     while ( @link_array )
     {
-
         die $server->{abort} if $abort || $server->{abort};
 
         my ( $uri, $parent, $depth ) = @{shift @link_array};
@@ -522,7 +520,6 @@ sub process_link
         $last_auth = $server->{last_auth}{auth} if $server->{last_auth}{path} eq $path;
     }
 
-
     if ( my ( $user, $pass ) = split /:/, ( $last_auth || $uri->userinfo || $server->{credentials} || '' ) )
     {
         $request->authorization_basic( $user, $pass );
@@ -542,12 +539,12 @@ sub process_link
         return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref if done
 
         # otherwise, we have a response object.
-
         $request->method('GET');
     }
 
     # Now make GET request
     $response = make_request( $request, $server, $uri, $parent, $depth );
+
     return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
     # Now we have a $response object with content
@@ -583,7 +580,6 @@ sub make_request
     {
         # When making a GET request this gets called for every chunk returned
         # from the webserver (well, from the OS).  No idea how bit it will be.
-        #
         my $total_length = 0;
 
         my $callback = sub
@@ -604,12 +600,10 @@ sub make_request
         ## Make Request ##
 
         # Used to wrap in an eval and use alarm on non-win32 to fix broken $ua->timeout
-
         $response = $ua->simple_request( $request, $callback, 4096 );
 
         # Check for callback death:
         # If the LWP callback aborts
-
         if ( $response->header('client-aborted') )
         {
             $response_aborted_msg = $response->header('X-Died') || 'unknown';
@@ -642,7 +636,7 @@ sub make_request
 
             # Not really sure why request aborted.  Let's try and make the error message
             # a bit cleaner.
-            print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n" if $server->{debug}&DEBUG_SKIPPED;
+            print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";# if $server->{debug}&DEBUG_SKIPPED;
         }
 
         # Aborting in the callback breaks the connection (so tested on Apache)
@@ -671,13 +665,8 @@ sub make_request
     $response->request->uri->userinfo( undef ) if $response->request;
     $uri->userinfo( undef );
 
-    # A little debugging
-    print STDERR "\nvvvvvvvvvvvvvvvv HEADERS for $uri vvvvvvvvvvvvvvvvvvvvv\n\n---- Request ------\n",
-                  $response->request->as_string,
-                  "\n---- Response ---\nStatus: ", $response->status_line,"\n",
-                  $response->headers->as_string,
-                  "\n^^^^^^^^^^^^^^^ END HEADERS ^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n"
-       if $server->{debug} & DEBUG_HEADERS;
+    # Log if requested
+    log_response( $response, $server, $uri, $parent, $depth );
 
     # Deal with failed responses
     return failed_response( $response, $server, $uri, $parent, $depth )
@@ -686,14 +675,8 @@ sub make_request
     # Don't log HEAD requests
     return $request if $request->method eq 'HEAD';
 
-    # Log if requested
-
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_URL;
-
     # Check for meta refresh
     # requires that $ua->parse_head() is enabled (the default)
-
     return redirect_response( $response, $server, $uri, $parent, $depth, $1, 'meta refresh' )
         if $response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/;
 
@@ -711,7 +694,6 @@ sub check_response
 
     # Cache user/pass if entered from the keyboard or callback function (as indicated by the realm)
     # do here so we know it is correct
-
     if ( $server->{cur_realm} && $uri->userinfo )
     {
         my $key = $uri->canonical->host_port . ':' . $server->{cur_realm};
@@ -720,11 +702,7 @@ sub check_response
         # not too sure of the best logic here
         my $path = $uri->path;
         $path =~ s!/[^/]*$!!;
-        $server->{last_auth} =
-        {
-            path => $path,
-            auth => $uri->userinfo,
-        };
+        $server->{last_auth} = { path => $path, auth => $uri->userinfo, };
     }
 
     # check for document too big.
@@ -756,18 +734,10 @@ sub failed_response
 
     my $links;
 
-    # Do we need to authorize?
-    if ( $response->code == 401 )
-    {
-        # This will log the error
-        #$links = authorize( $response, $server, $uri, $parent, $depth );
-        return $links if ref $links or !$links;
-    }
-
     # Are we rejected because of robots.txt?
     if ( $response->status_line =~ 'robots.txt' )
     {
-        print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n" if $server->{debug}&DEBUG_SKIPPED;
+        print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n";# if $server->{debug}&DEBUG_SKIPPED;
         $server->{counts}{'robots.txt'}++;
         return;
     }
@@ -780,10 +750,6 @@ sub failed_response
     # Not so sure about this being here for these links...
     validate_link( $server, $uri, $parent, $response )
         if $server->{validate_links};
-
-    # Otherwise, log if needed and then return.
-    log_response( $response, $server, $uri, $parent, $depth )
-        if $server->{debug} & DEBUG_FAILED;
 
     return;
 }
@@ -824,42 +790,17 @@ sub redirect_response
     # make recursive request
     # This will not happen because the check_link records that the link has been seen.
     # But leave here just in case
-
     if ( $server->{_request}{redirects}++ > MAX_REDIRECTS )
     {
         warn "Exceeded redirect limimt: perhaps a redirect loop: $uri on parent page: $parent\n";
         return;
     }
 
-    print STDERR "--Redirect: $description $uri -> $u. Parent: $parent\n" if $server->{debug} & DEBUG_REDIRECT;
-
     $server->{counts}{"$description Redirects"}++;
     my $links = process_link( $server, $u, $parent, $depth );
     $server->{_request}{redirects}-- if  $server->{_request}{redirects};
 
     return $links;
-}
-
-#==================================================================================
-# Log a response
-sub log_response
-{
-    my ( $response, $server, $uri, $parent, $depth ) = @_;
-
-    # Log the response
-    print STDERR '>> ',
-      join( ' ',
-            ( $response->is_success ? '+Fetched' : '-Failed' ),
-            $depth,
-            "Cnt: $server->{counts}{'Unique URLs'}",
-            $response->request->method,
-            " $uri ",
-            ( $response->status_line || $response->status || 'unknown status' ),
-            ( $response->content_type || 'Unknown content type'),
-            ( $response->content_length || '???' ),
-            "parent:$parent",
-            "depth:$depth",
-       ),"\n";
 }
 
 #==============================================================================
@@ -893,8 +834,8 @@ sub process_content
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
         if ( $visited{ $digest } )
         {
-            print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n"
-                if $server->{debug} & DEBUG_SKIPPED;
+            print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n";
+                #if $server->{debug} & DEBUG_SKIPPED;
 
             $server->{counts}{Skipped}++;
             $server->{counts}{'MD5 Duplicates'}++;
@@ -908,8 +849,8 @@ sub process_content
     unless ( $content )
     {
         my $empty = '';
-        output_content( $server, \$empty, $uri, $response )
-            unless $server->{no_index};
+        #output_content( $server, \$empty, $uri, $response )
+        #    unless $server->{no_index};
         return;
     }
 
@@ -921,12 +862,12 @@ sub process_content
     if ( $server->{no_index} )
     {
         $server->{counts}{Skipped}++;
-        print STDERR "-Skipped indexing $uri some callback set 'no_index' flag\n" if $server->{debug}&DEBUG_SKIPPED;
+        print STDERR "-Skipped indexing $uri some callback set 'no_index' flag\n";# if $server->{debug}&DEBUG_SKIPPED;
     }
     else
     {
-        output_content( $server, \$content, $uri, $response )
-            unless $server->{no_index};
+        #output_content( $server, \$content, $uri, $response )
+        #    unless $server->{no_index};
     }
 
     return $links_extracted;
@@ -951,7 +892,7 @@ sub extract_links
     # allow skipping.
     if ( $server->{no_spider} )
     {
-        print STDERR '-Links not extracted: ', $response->request->uri->canonical, " some callback set 'no_spider' flag\n" if $server->{debug}&DEBUG_SKIPPED;
+        print STDERR '-Links not extracted: ', $response->request->uri->canonical, " some callback set 'no_spider' flag\n";# if $server->{debug}&DEBUG_SKIPPED;
         return;
     }
 
@@ -961,8 +902,6 @@ sub extract_links
 
     my $base = $response->base;
     $visited{ $base }++;  # $$$ come back and fix this (see 4/20/03 lwp post)
-
-    print STDERR "\nExtracting links from ", $response->request->uri, ":\n" if $server->{debug} & DEBUG_LINKS;
 
     my $p = HTML::LinkExtor->new;
     $p->parse( $$content );
@@ -974,7 +913,6 @@ sub extract_links
         my ( $tag, %attr ) = @$_;
 
         # which tags to use ( not reported in debug )
-
         my $attr = join ' ', map { qq[$_="$attr{$_}"] } keys %attr;
 
         print STDERR "\nLooking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
@@ -1018,15 +956,13 @@ sub extract_links
             }
         }
 
-
         if ( !$found && $server->{debug} & DEBUG_LINKS )
         {
             print STDERR "  tag did not include any links to follow or is a duplicate\n";
         }
-
     }
 
-    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n" if $server->{debug} & DEBUG_INFO;
+    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n";# if $server->{debug} & DEBUG_INFO;
 
     return \@links;
 }
@@ -1068,13 +1004,14 @@ sub check_link
 
     # Don't add the link if already seen  - these are so common that we don't report
     # Might be better to do something like $visited{ $u->path } or $visited{$u->host_port}{$u->path};
-    if ( $visited{ $u->canonical }++ )
+    if ( $visited{ $u->canonical }++ && 0)
     {
         #$server->{counts}{Skipped}++;
         $server->{counts}{Duplicates}++;
 
         # Just so it's reported for all pages
-        if ( $server->{validate_links} && $validated{$u->canonical} ) {
+        if ( $server->{validate_links} && $validated{$u->canonical} )
+        {
             push @{$bad_links{ $base->canonical }}, $u->canonical;
         }
 
@@ -1128,6 +1065,40 @@ sub validate_link
     push @{$bad_links{ $base->canonical }}, $uri->canonical;
 }
 
+#==================================================================================
+# Log a response
+sub log_response
+{
+    my ( $response, $server, $uri, $parent, $depth ) = @_;
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+    my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
+
+    my $status = ( $response->status_line || $response->status || 'unknown status' );
+    my $length = ( $response->content_length || '???' );
+
+    my $content = $response->decoded_content;
+    my $bytecount = length $content;
+
+    printf("%s - %-25s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
+
+    return;
+
+    print '>> ',
+      join( ' ',
+            ( $response->is_success ? '+Fetched' : '-Failed' ),
+            $depth,
+            "Cnt: $server->{counts}{'Unique URLs'}",
+            $response->request->method,
+            " $uri ",
+            ( $response->status_line || $response->status || 'unknown status' ),
+            ( $response->content_type || 'Unknown content type'),
+            ( $response->content_length || '???' ),
+            "parent:$parent",
+            "depth:$depth",
+       ),"\n";
+}
+
 #===================================================================================
 # output_content -- formats content for swish-e
 #
@@ -1144,27 +1115,6 @@ sub output_content
         $$content = ' ';
     }
 
-    ## Now, either need to re-encode into the original charset,
-    # or remove any charset from <meta> tags and then return utf8.
-    # HTTP::Message uses a different method to extract out the charset,
-    # but should result in the same value.
-    for ( $response->header('content-type') )
-    {
-        $server->{charset} = $1 if /\bcharset=([^;]+)/;
-    }
-    # Re-encode the data for outside of Perl
-    eval
-    {
-        # Need to only require Encode here?
-        $$content = Encode::encode( $server->{charset}, $$content )
-            if $server->{charset};
-    };
-    if ( $@ )
-    {
-        print STDERR "Warning: document '", $response->request->uri, "' could not be encoded to charset '$server->{charset}'\n";
-        delete $server->{charset};
-    }
-
     $server->{counts}{'Total Bytes'} += length $$content;
     $server->{counts}{'Total Docs'}++;
 
@@ -1175,34 +1125,10 @@ sub output_content
     my $path = $uri;
     $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
 
-    my $headers = join "\n",
-        'Path-Name: ' .  $path,
-        'Content-Length: ' . $bytecount,
-        '';
-
-    $headers .= 'Charset: ' . delete( $server->{charset}) . "\n" if $server->{charset};
-
-    $headers .= 'Last-Mtime: ' . $response->last_modified . "\n"
-        if $response->last_modified;
-
-    # Set the parser type if specified by filtering
-    if ( my $type = delete $server->{parser_type} )
-    {
-        $headers .= "Document-Type: $type\n";
-    }
-    elsif ( $response->content_type =~ m!^text/(html|xml|plain)! )
-    {
-        $type = $1 eq 'plain' ? 'txt' : $1;
-        $headers .= "Document-Type: $type*\n";
-    }
-
-    $headers .= "No-Contents: 1\n" if $server->{no_contents};
-    #print "$headers\n$$content";
-    
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
 
-    print "$timestamp - " . $response->status_line . " $bytecount - " . $path . "\n";
+    #print "$timestamp - " . $response->status_line . " $bytecount - " . $path . "\n";
 
     die "$0: Max indexed files Reached\n"
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
