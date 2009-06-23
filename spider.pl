@@ -529,7 +529,7 @@ sub process_link
 
     delete $server->{response_checked};  # to keep from checking more than once
 
-    if ( $server->{use_head_requests} )
+    if ($server->{use_head_requests})
     {
         $request->method('HEAD');
 
@@ -543,7 +543,7 @@ sub process_link
     }
 
     # Now make GET request
-    $response = make_request( $request, $server, $uri, $parent, $depth );
+    $response = make_request($request, $server, $uri, $parent, $depth);
 
     return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
@@ -627,10 +627,10 @@ sub make_request
     $server->{last_response_time} = time;
 
     # Ok, did the request abort for some reason?  (response checker called die() )
-    if ( $response_aborted_msg )
+    if ($response_aborted_msg)
     {
         # Log unless it's the callback (because the callback already logged it)
-        if ( $response_aborted_msg !~ /test_response/ )
+        if ($response_aborted_msg !~ /test_response/)
         {
             $server->{counts}{Skipped}++;
 
@@ -662,22 +662,41 @@ sub make_request
     return if $server->{abort};
 
     # Clean up the URI so passwords don't leak
-    $response->request->uri->userinfo( undef ) if $response->request;
-    $uri->userinfo( undef );
+    $response->request->uri->userinfo(undef) if $response->request;
+    $uri->userinfo(undef);
 
     # Log if requested
-    log_response( $response, $server, $uri, $parent, $depth );
+    log_response($response, $server, $uri, $parent, $depth, '');
 
-    # Deal with failed responses
-    return failed_response( $response, $server, $uri, $parent, $depth )
-        unless $response->is_success;
+    # Deal with failed responses - non 2xx
+    if (!$response->is_success)
+    {
+        # Are we rejected because of robots.txt?
+        if ($response->status_line =~ 'robots.txt')
+        {
+            #print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n";# if $server->{debug}&DEBUG_SKIPPED;
+            $server->{counts}{'robots.txt'}++;
+            return;
+        }
+
+        # Look for redirect
+        return redirect_response($response, $server, $uri, $parent, $depth)
+            if $response->is_redirect;
+
+        # Report bad links (excluding those skipped by robots.txt)
+        # Not so sure about this being here for these links...
+        validate_link( $server, $uri, $parent, $response )
+            if $server->{validate_links};
+
+        return;
+    }
 
     # Don't log HEAD requests
     return $request if $request->method eq 'HEAD';
 
     # Check for meta refresh
     # requires that $ua->parse_head() is enabled (the default)
-    return redirect_response( $response, $server, $uri, $parent, $depth, $1, 'meta refresh' )
+    return redirect_response($response, $server, $uri, $parent, $depth, $1, 'meta refresh')
         if $response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/;
 
     return $response;
@@ -722,36 +741,6 @@ sub check_too_big
 
     die "Document exceeded $server->{max_size} bytes (Content-Length: $length) Method: " . $response->request->method . "\n"
         if $length > $server->{max_size};
-}
-
-#=========================================================================
-# failed_response -- deal with a non 2xx response
-#
-#------------------------------------------------------------------------
-sub failed_response
-{
-    my ( $response, $server, $uri, $parent, $depth ) = @_;
-
-    my $links;
-
-    # Are we rejected because of robots.txt?
-    if ( $response->status_line =~ 'robots.txt' )
-    {
-        print STDERR "-Skipped $depth $uri: ", $response->status_line,"\n";# if $server->{debug}&DEBUG_SKIPPED;
-        $server->{counts}{'robots.txt'}++;
-        return;
-    }
-
-    # Look for redirect
-    return redirect_response( $response, $server, $uri, $parent, $depth )
-        if $response->is_redirect;
-
-    # Report bad links (excluding those skipped by robots.txt)
-    # Not so sure about this being here for these links...
-    validate_link( $server, $uri, $parent, $response )
-        if $server->{validate_links};
-
-    return;
 }
 
 #=============================================================================
@@ -834,8 +823,11 @@ sub process_content
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
         if ( $visited{ $digest } )
         {
-            print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n";
-                #if $server->{debug} & DEBUG_SKIPPED;
+            print STDERR "-Skipped $uri has same digest as $visited{ $digest }\n"
+                if $uri ne $visited{ $digest };
+
+            log_response( $response, $server, $uri, $parent, $depth, "Same digest as $visited{ $digest }" )
+                if $uri ne $visited{ $digest };
 
             $server->{counts}{Skipped}++;
             $server->{counts}{'MD5 Duplicates'}++;
@@ -962,7 +954,7 @@ sub extract_links
         }
     }
 
-    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n";# if $server->{debug} & DEBUG_INFO;
+    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n" if $server->{debug} & DEBUG_INFO;
 
     return \@links;
 }
@@ -1069,7 +1061,7 @@ sub validate_link
 # Log a response
 sub log_response
 {
-    my ( $response, $server, $uri, $parent, $depth ) = @_;
+    my ( $response, $server, $uri, $parent, $depth, $msg ) = @_;
 
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
@@ -1080,7 +1072,14 @@ sub log_response
     my $content = $response->decoded_content;
     my $bytecount = length $content;
 
-    printf("%s - %-25s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
+    if ($msg)
+    {
+        printf("%s - %-25s %10s %6s - %s => %s\n", $timestamp, $status, $msg, $bytecount, $parent, $uri);
+    }
+    else
+    {
+        printf("%s - %-25s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
+    }
 
     return;
 
