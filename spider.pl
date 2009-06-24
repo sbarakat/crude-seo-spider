@@ -76,7 +76,6 @@ my @config_options = qw(
     keep_alive
     link_tags
     max_depth
-    max_files
     max_indexed
     max_size
     max_time
@@ -483,11 +482,10 @@ sub process_link
 
     $server->{counts}{'Unique URLs'}++;
 
-    die "$0: Max files Reached\n"
-        if $server->{max_files} && $server->{counts}{'Unique URLs'} > $server->{max_files};
-
     die "$0: Time Limit Exceeded\n"
         if $server->{max_time} && $server->{max_time} < time;
+
+
 
     # Make request object for this URI
     my $request = HTTP::Request->new('GET', $uri);
@@ -806,6 +804,9 @@ sub process_content
     my $content = $response->decoded_content;
     my $bytecount = length $content;
 
+    $server->{counts}{'Total Bytes'} += $bytecount;
+    $server->{counts}{'Total Docs'}++;
+
     # make sure content is unique - probably better to chunk into an MD5 object above
     if ($server->{use_md5})
     {
@@ -818,6 +819,10 @@ sub process_content
 
             $server->{counts}{Skipped}++;
             $server->{counts}{'MD5 Duplicates'}++;
+
+            die "$0: Max indexed files Reached\n"
+                if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
+
             return;
         }
         $visited{ $digest } = $uri;
@@ -825,6 +830,9 @@ sub process_content
 
     #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
     log_response($status, $bytecount, $parent, $uri, $depth, '');
+
+    die "$0: Max indexed files Reached\n"
+        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 
     return unless ($content);
 
@@ -1029,6 +1037,8 @@ sub log_response
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
 
+    $bytecount = convert($bytecount);
+
     if ($msg)
     {
         printf("%s - %-27s %6s - %s => %s %s\n", $timestamp, $status, $bytecount, $parent, $uri, $msg);
@@ -1055,23 +1065,12 @@ sub output_content
         $$content = ' ';
     }
 
-    $server->{counts}{'Total Bytes'} += length $$content;
-    $server->{counts}{'Total Docs'}++;
-
     # ugly and maybe expensive, but perhaps more portable than "use bytes"
     my $bytecount = length pack 'C0a*', $$content;
 
     # Decode the URL
     my $path = $uri;
     $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
-
-    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
-    my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
-
-    #print "$timestamp - " . $response->status_line . " $bytecount - " . $path . "\n";
-
-    die "$0: Max indexed files Reached\n"
-        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 }
 
 sub commify
@@ -1129,4 +1128,18 @@ sub default_config
         filter_content      => $filter_sub,
         filter_object       => $filter,
     };
+}
+
+sub convert {
+  my $size = shift;
+  my @args = qw/b K M G/;
+ 
+  while (@args && $size > 1024) {
+    shift @args;
+    $size /= 1024;
+  }
+ 
+  $size = sprintf("%.1f",$size);
+ 
+  return "$size$args[0]";
 }

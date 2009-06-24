@@ -115,8 +115,8 @@ this with the "perldoc" command you will not see the examples below.
 
         delay_sec   => 0,         # Delay in seconds between requests
         max_time    => 2,         # Max time to spider in minutes
-        max_files   => 1000,       # Max Unique URLs to spider
-        max_indexed => 1000,        # Max number of files to send to swish for indexing
+        #max_files   => 1000,       # Max Unique URLs to spider
+        max_indexed => 100,        # Max number of files to send to swish for indexing
         keep_alive  => 1,         # enable keep alives requests
         max_depth   => 3,
         #ignore_robots_file => 1,
