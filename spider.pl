@@ -427,7 +427,7 @@ sub spider
 
         my $new_links = process_link($server, $uri->clone, $parent, $depth);
 
-        push @link_array, map { [ $_, $uri, $depth+1 ] } @$new_links if $new_links;
+        push @link_array, map { [ $_, $uri, $depth + 1 ] } @$new_links if $new_links;
     }
 }
 
@@ -485,8 +485,6 @@ sub process_link
     die "$0: Time Limit Exceeded\n"
         if $server->{max_time} && $server->{max_time} < time;
 
-
-
     # Make request object for this URI
     my $request = HTTP::Request->new('GET', $uri);
 
@@ -536,6 +534,10 @@ sub process_link
     # Now make GET request
     $response = make_request($request, $server, $uri, $parent, $depth);
 
+just_log($uri);
+
+
+
     # Deal with failed responses - non 2xx
     if (!$response->is_success)
     {
@@ -555,6 +557,7 @@ sub process_link
         # Not so sure about this being here for these links...
         elsif ($server->{validate_links})
         {
+            just_log("val");
             validate_link($server, $uri, $parent, $response);
         }
     }
@@ -566,13 +569,72 @@ sub process_link
     # requires that $ua->parse_head() is enabled (the default)
     if ($response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/)
     {
+        just_log("meta refresh");
         redirect_response($response, $server, $uri, $parent, $depth, $1, 'meta refresh');
     }
 
+    # Check for meta robots tag
+    # -- should probably be done in request sub to avoid fetching docs that are not needed
+    # -- also, this will not not work with compression $$$ check this
+    unless ($server->{ignore_robots_file}  || $server->{ignore_robots_headers})
+    {
+        if (my $directives = $response->header('X-Meta-ROBOTS'))
+        {
+            my %settings = map { lc $_, 1 } split /\s*,\s*/, $directives;
+        }
+    }
+
+
+if (!$response || ref $response eq 'ARRAY')
+{
+    just_log("getting out");
+}
+
     return $response if !$response || ref $response eq 'ARRAY';  # returns undef or an array ref
 
-    # Now we have a $response object with content
-    return process_content($response, $server, $uri, $parent, $depth);
+    my $status = ($response->status_line || $response->status || 'unknown status');
+    my $content = $response->decoded_content;
+    my $bytecount = length $content;
+
+    $server->{counts}{'Total Bytes'} += $bytecount;
+    $server->{counts}{'Total Docs'}++;
+
+    # make sure content is unique
+    if ($server->{use_md5} && $response->status_line =~ m/200 OK/i)
+    {
+        my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
+        if ($visited{ $digest })
+        {
+            #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
+            log_response($status . ' Duplicate', $bytecount, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }");
+                #if $uri ne $visited{ $digest } && $response->status_line =~ m/200 OK/i;
+
+            $server->{counts}{Skipped}++;
+            $server->{counts}{'MD5 Duplicates'}++;
+
+            die "$0: Max indexed files Reached\n"
+                if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
+
+            return;
+        }
+        $visited{ $digest } = $uri;
+    }
+
+    #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
+    log_response($status, $bytecount, $parent, $uri, $depth, '');
+
+    die "$0: Max indexed files Reached\n"
+        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
+
+    return unless ($content);
+
+    # Extract out links (if not too deep)
+    my $links_extracted = extract_links($server, \$content, $response)
+        unless defined $server->{max_depth} && $depth >= $server->{max_depth};
+
+
+
+    return $links_extracted;
 }
 
 #===================================================================================
@@ -768,79 +830,17 @@ sub redirect_response
     # But leave here just in case
     if ($server->{_request}{redirects}++ > MAX_REDIRECTS)
     {
-        warn "Exceeded redirect limimt: perhaps a redirect loop: $uri on parent page: $parent\n";
+        warn "Exceeded redirect limit: perhaps a redirect loop: $uri on parent page: $parent\n";
         return;
     }
 
     $server->{counts}{"$description Redirects"}++;
-    my $links = process_link($server, $u, $parent, $depth);
+    #my $links = process_link($server, $u, $parent, $depth);
+    my @links;
+    push @links, $u;
     $server->{_request}{redirects}-- if  $server->{_request}{redirects};
 
-    return $links;
-}
-
-#==============================================================================
-# process_content -- deals with a response object.  Kinda
-#
-# returns an array ref of new links to follow
-#
-#-----------------------------------------------------------------------------
-sub process_content
-{
-    my ($response, $server, $uri, $parent, $depth) = @_;
-
-    # Check for meta robots tag
-    # -- should probably be done in request sub to avoid fetching docs that are not needed
-    # -- also, this will not not work with compression $$$ check this
-    unless ($server->{ignore_robots_file}  || $server->{ignore_robots_headers})
-    {
-        if (my $directives = $response->header('X-Meta-ROBOTS'))
-        {
-            my %settings = map { lc $_, 1 } split /\s*,\s*/, $directives;
-        }
-    }
-
-    my $status = ($response->status_line || $response->status || 'unknown status');
-    my $content = $response->decoded_content;
-    my $bytecount = length $content;
-
-    $server->{counts}{'Total Bytes'} += $bytecount;
-    $server->{counts}{'Total Docs'}++;
-
-    # make sure content is unique - probably better to chunk into an MD5 object above
-    if ($server->{use_md5})
-    {
-        my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
-        if ($visited{ $digest })
-        {
-            #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
-            log_response($status . ' Duplicate', $bytecount, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }")
-                if $uri ne $visited{ $digest } && $response->status_line =~ m/200 OK/i;
-
-            $server->{counts}{Skipped}++;
-            $server->{counts}{'MD5 Duplicates'}++;
-
-            die "$0: Max indexed files Reached\n"
-                if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
-
-            return;
-        }
-        $visited{ $digest } = $uri;
-    }
-
-    #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
-    log_response($status, $bytecount, $parent, $uri, $depth, '');
-
-    die "$0: Max indexed files Reached\n"
-        if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
-
-    return unless ($content);
-
-    # Extract out links (if not too deep)
-    my $links_extracted = extract_links($server, \$content, $response)
-        unless defined $server->{max_depth} && $depth >= $server->{max_depth};
-
-    return $links_extracted;
+    return $u;
 }
 
 #==============================================================================================
@@ -967,7 +967,7 @@ sub check_link
 
     # Don't add the link if already seen  - these are so common that we don't report
     # Might be better to do something like $visited{ $u->path } or $visited{$u->host_port}{$u->path};
-    if ($visited{ $u->canonical }++ && 0)
+    if ($visited{ $u->canonical }++)
     {
         #$server->{counts}{Skipped}++;
         $server->{counts}{Duplicates}++;
@@ -1047,6 +1047,17 @@ sub log_response
     {
         printf("%s - %-27s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
     }
+}
+
+sub just_log
+{
+    my ($msg) = @_;
+
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+    my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
+
+
+    printf("%s - %s\n", $timestamp, $msg);
 }
 
 #===================================================================================

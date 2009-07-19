@@ -106,7 +106,7 @@ this with the "perldoc" command you will not see the examples below.
         #skip        => 0,  # skip spidering this server
 
         base_url    => 'http://www.team-mediaportal.com/',
-        same_hosts  => [ 'www.team-mediaportal.com' ],
+        same_hosts  => [ 'www.team-mediaportal.com', 'wiki.team-mediaportal.com' ],
         agent       => 'swish-e spider http://swish-e.org/',
         email       => 'swish@domain.invalid',
 
