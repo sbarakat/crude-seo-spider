@@ -1,0 +1,28 @@
+Main
+  loop $base_url
+    process_server()
+
+process_server()
+  checks config
+  spider()
+
+spider()
+  loop $link_array
+    process_link()
+
+process_link()
+  check time limit
+  make_request()
+  deal with non 2xx
+  redirect_response()
+  process_content()
+
+make_request()
+  check_response()
+
+redirect_response()
+  check_link()
+  process_link()
+
+process_content()
+  log_response()
