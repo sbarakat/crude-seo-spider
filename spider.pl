@@ -33,6 +33,7 @@ $HTTP::URI_CLASS = "URI";   # prevent loading default URI::URL
 use LWP::RobotUA;
 use HTML::LinkExtor;
 use HTML::Tagset;
+use Time::HiRes qw(usleep ualarm gettimeofday tv_interval);
 
 use vars '$VERSION';
 #$VERSION = sprintf '%d.%02d', q$Revision: 1900 $ =~ /: (\d+)\.(\d+)/;
@@ -490,8 +491,6 @@ sub process_link
 {
     my ($server, $uri, $parent, $depth) = @_;
 
-    $server->{counts}{'Unique URLs'}++;
-
     die "$0: Time Limit Exceeded\n"
         if $server->{max_time} && $server->{max_time} < time;
 
@@ -541,13 +540,12 @@ sub process_link
         $request->method('GET');
     }
 
-    my $exeTime = time;
+    my $t0 = [gettimeofday];
     # Now make GET request
     $response = make_request($request, $server, $uri, $parent, $depth);
 
-just_log(time - $exeTime);
-
-my $redirect_url;
+    my $elapsed = tv_interval($t0);
+    my $redirect_url;
 
     # Deal with failed responses - non 2xx
     if (!$response->is_success)
@@ -617,7 +615,7 @@ if (!$response || ref $response eq 'ARRAY')
         if ($visited{ $digest } && $uri ne $visited{ $digest })
         {
             #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
-            log_response($status . ' Duplicate', $bytecount, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }");
+            log_response($status . ' Duplicate', $bytecount, $elapsed, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }");
                 #if $uri ne $visited{ $digest } && $response->status_line =~ m/200 OK/i;
 
             $server->{counts}{Skipped}++;
@@ -632,7 +630,7 @@ if (!$response || ref $response eq 'ARRAY')
     }
 
     #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
-    log_response($status, $bytecount, $parent, $uri, $depth, '');
+    log_response($status, $bytecount, $elapsed, $parent, $uri, $depth, '');
 
     return $redirect_url if ($redirect_url);
 
@@ -1043,7 +1041,7 @@ sub validate_link
 # Log a response
 sub log_response
 {
-    my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
+    my ($status, $bytecount, $elapsed, $parent, $uri, $depth, $msg) = @_;
 
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
@@ -1052,11 +1050,11 @@ sub log_response
 
     if ($msg)
     {
-        printf("%s - %-27s %6s - %s => %s %s\n", $timestamp, $status, $bytecount, $parent, $uri, $msg);
+        printf("%s - %-27s %6s %6.3fs - %s => %s %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $msg);
     }
     else
     {
-        printf("%s - %-27s %6s - %s => %s\n", $timestamp, $status, $bytecount, $parent, $uri);
+        printf("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
     }
 }
 
