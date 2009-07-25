@@ -427,7 +427,17 @@ sub spider
 
         my $new_links = process_link($server, $uri->clone, $parent, $depth);
 
-        push @link_array, map { [ $_, $uri, $depth + 1 ] } @$new_links if $new_links;
+        if ($new_links)
+        {
+            if (ref($new_links) eq 'ARRAY')
+            {
+                push @link_array, map { [ $_, $uri, $depth + 1 ] } @$new_links;
+            }
+            else
+            {
+                unshift @link_array, map { [ $_, $uri, $depth + 1 ] } $new_links;
+            }
+        }
     }
 }
 
@@ -531,12 +541,13 @@ sub process_link
         $request->method('GET');
     }
 
+    my $exeTime = time;
     # Now make GET request
     $response = make_request($request, $server, $uri, $parent, $depth);
 
-just_log($uri);
+just_log(time - $exeTime);
 
-
+my $redirect_url;
 
     # Deal with failed responses - non 2xx
     if (!$response->is_success)
@@ -550,7 +561,7 @@ just_log($uri);
         # Look for redirect
         elsif ($response->is_redirect)
         {
-            redirect_response($response, $server, $uri, $parent, $depth);
+            $redirect_url = redirect_response($response, $server, $uri, $parent, $depth);
         }
 
         # Report bad links (excluding those skipped by robots.txt)
@@ -603,7 +614,7 @@ if (!$response || ref $response eq 'ARRAY')
     if ($server->{use_md5} && $response->status_line =~ m/200 OK/i)
     {
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
-        if ($visited{ $digest })
+        if ($visited{ $digest } && $uri ne $visited{ $digest })
         {
             #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
             log_response($status . ' Duplicate', $bytecount, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }");
@@ -623,6 +634,8 @@ if (!$response || ref $response eq 'ARRAY')
     #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
     log_response($status, $bytecount, $parent, $uri, $depth, '');
 
+    return $redirect_url if ($redirect_url);
+
     die "$0: Max indexed files Reached\n"
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 
@@ -631,8 +644,6 @@ if (!$response || ref $response eq 'ARRAY')
     # Extract out links (if not too deep)
     my $links_extracted = extract_links($server, \$content, $response)
         unless defined $server->{max_depth} && $depth >= $server->{max_depth};
-
-
 
     return $links_extracted;
 }
@@ -823,7 +834,7 @@ sub redirect_response
     }
 
     # make sure it's ok:
-    return unless check_link($u, $server, $response->base, '(redirect)', $description);
+    #return unless check_link($u, $server, $response->base, '(redirect)', $description);
 
     # make recursive request
     # This will not happen because the check_link records that the link has been seen.
@@ -963,7 +974,7 @@ sub check_link
         return;
     }
 
-    $u->host_port($server->{authority});  # Force all the same host name
+    #$u->host_port($server->{authority});  # Force all the same host name
 
     # Don't add the link if already seen  - these are so common that we don't report
     # Might be better to do something like $visited{ $u->path } or $visited{$u->host_port}{$u->path};

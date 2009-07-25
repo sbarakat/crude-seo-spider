@@ -106,7 +106,7 @@ this with the "perldoc" command you will not see the examples below.
         #skip        => 0,  # skip spidering this server
 
         base_url    => 'http://www.team-mediaportal.com/',
-        same_hosts  => [ 'www.team-mediaportal.com', 'wiki.team-mediaportal.com' ],
+        same_hosts  => [ 'team-mediaportal.com', 'wiki.team-mediaportal.com' ],
         agent       => 'swish-e spider http://swish-e.org/',
         email       => 'swish@domain.invalid',
 
@@ -114,9 +114,9 @@ this with the "perldoc" command you will not see the examples below.
         #test_url    => sub { $_[0]->path =~ /\.html?$/ },
 
         delay_sec   => 0,         # Delay in seconds between requests
-        max_time    => 2,         # Max time to spider in minutes
+        #max_time    => 10,         # Max time to spider in minutes
         #max_files   => 1000,       # Max Unique URLs to spider
-        max_indexed => 100,        # Max number of files to send to swish for indexing
+        max_indexed => 10,        # Max number of files to send to swish for indexing
         keep_alive  => 1,         # enable keep alives requests
         max_depth   => 3,
         #ignore_robots_file => 1,
