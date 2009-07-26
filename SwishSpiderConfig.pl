@@ -114,11 +114,10 @@ this with the "perldoc" command you will not see the examples below.
         #test_url    => sub { $_[0]->path =~ /\.html?$/ },
 
         delay_sec   => 0,         # Delay in seconds between requests
-        #max_time    => 10,         # Max time to spider in minutes
-        #max_files   => 1000,       # Max Unique URLs to spider
-        max_indexed => 10,        # Max number of files to send to swish for indexing
-        keep_alive  => 1,         # enable keep alives requests
-        max_depth   => 3,
+        max_time    => 60,         # Max time to spider in minutes
+        #max_indexed => 10,        # Max number of files to send to swish for indexing
+        #keep_alive  => 1,         # enable keep alives requests
+        #max_depth   => 3,
         #ignore_robots_file => 1,
         use_md5 => 1,
     } );

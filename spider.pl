@@ -65,14 +65,8 @@ my %DEBUG_MAP = (
 my @config_options = qw(
     agent
     base_url
-    credentials
-    credential_timeout
-    debug
-    delay_min  (deprecated)
     delay_sec
     email
-    filter_content
-    get_password
     ignore_robots_file
     keep_alive
     link_tags
@@ -81,20 +75,15 @@ my @config_options = qw(
     max_size
     max_time
     max_wait_time
-    quiet
     remove_leading_dots
     same_hosts
     skip
-    spider_done
-    test_response
-    test_url
     use_cookies
     use_default_config
     use_head_requests
     use_md5
     validate_links
     filter_object
-    output_function
 );
 my %valid_config_options = map { $_ => 1 } @config_options;
 
@@ -111,39 +100,53 @@ sub UNIVERSAL::port { '' };
 sub UNIVERSAL::host_port { '' };
 sub UNIVERSAL::userinfo { '' };
 
+#-----------------------------------------------------------------------
+#use Config::Tiny;
+#my $Config = Config::Tiny->new();
+#$Config = Config::Tiny->read( "spider.conf" );
+#my $CFG_agent = $Config->{_}->{agent};
+#print "$CFG_agent\n";
+#exit;
+
+#use Config::Simple;
+#$cfg = new Config::Simple('spider.conf');
+#$agent = $cfg->param('agent');
+#print $agent;
+#exit;
+
+
 
 #-----------------------------------------------------------------------
+
+    use Config::Tiny;
+    my $Config = Config::Tiny->new();
+    $Config = Config::Tiny->read( "spider.conf" );
+    #my $CFG_agent = $Config->{_}->{agent};
+
 
     use vars '@servers';
 
     my $config = shift || 'SwishSpiderConfig.pl';
 
-    if (lc($config) eq 'default')
+    do $config or die "Failed to read $0 configuration parameters '$config' $! $@";
+
+    die "$0: config file '$config' failed to set \@servers array\n"
+        unless @servers;
+
+    die "$0: config file '$config' did not set \@servers array to contain a hash\n"
+        unless ref $servers[0] eq 'HASH';
+
+    # Check config options
+    for my $server (@servers)
     {
-        @servers = default_urls();
-    }
-    else
-    {
-        do $config or die "Failed to read $0 configuration parameters '$config' $! $@";
-
-        die "$0: config file '$config' failed to set \@servers array\n"
-            unless @servers;
-
-        die "$0: config file '$config' did not set \@servers array to contain a hash\n"
-            unless ref $servers[0] eq 'HASH';
-
-        # Check config options
-        for my $server (@servers)
+        for (keys %$server)
         {
-            for (keys %$server)
-            {
-                warn "$0: ** Warning: config option [$_] is unknown.  Perhaps misspelled?\n"
-                    unless $valid_config_options{$_}
-            }
+            warn "$0: ** Warning: config option [$_] is unknown.  Perhaps misspelled?\n"
+                unless $valid_config_options{$_}
         }
     }
 
-    print STDERR "$0: Reading parameters from '$config'\n" unless $ENV{SPIDER_QUIET};
+    print STDERR "$0: Reading parameters from '$config'\n";
 
     my $abort;
     local $SIG{HUP} = sub { warn "Caught SIGHUP\n"; $abort++ } unless $^O =~ /Win32/i;
@@ -153,27 +156,211 @@ sub UNIVERSAL::userinfo { '' };
     my %validated;
     my %bad_links;
 
-    for my $s (@servers)
+    my $server = pop(@servers);
+
+    if (!$server->{base_url})
     {
-        if (!$s->{base_url})
+        die "You must specify 'base_url' in your spider config settings\n";
+    }
+
+    # To weed out
+    $server->{debug} = 0;
+    $server->{quiet} = 0;
+
+    # Read config options
+    $server->{agent} = $Config->{_}->{agent} || 'swish-e http://swish-e.org/';
+    $server->{email} = $Config->{_}->{email} || 'swish@domain.invalid';
+    
+    #$server->{max_size} = MAX_SIZE unless defined $server->{max_size};
+    $server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
+    #$server->{max_wait_time} ||= MAX_WAIT_TIME;
+    $server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
+
+    # Lame Microsoft
+    $URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
+
+    die "max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
+    die "max_wait_time parameter '$server->{max_wait_time}' must be a number\n" if $server->{max_wait_time} !~ /^\d+$/;
+
+    # Can be zero or undef or a number.
+    $server->{credential_timeout} = 30 unless exists $server->{credential_timeout};
+    die "credential_timeout '$server->{credential_timeout}' must be a number\n" if defined $server->{credential_timeout} && $server->{credential_timeout} !~ /^\d+$/;
+
+    $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
+    $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
+
+    die "max_depth parameter '$server->{max_depth}' must be a number\n" if defined $server->{max_depth} && $server->{max_depth} !~ /^\d+/;
+
+
+
+    for (qw/ test_url test_response filter_content/)
+    {
+        next unless $server->{$_};
+        $server->{$_} = [ $server->{$_} ] unless ref $server->{$_} eq 'ARRAY';
+        my $n;
+        for my $sub (@{$server->{$_}})
         {
-            die "You must specify 'base_url' in your spider config settings\n";
-        }
-
-        # Merge in default config?
-        $s = { %{ default_config() }, %$s } if $s->{use_default_config};
-
-        # Now, process each URL listed
-        my @urls = ref $s->{base_url} eq 'ARRAY' ? @{$s->{base_url}} :($s->{base_url});
-        for my $url (@urls)
-        {
-            # purge config options -- used when base_url is an array
-            $valid_config_options{$_} ||  delete $s->{$_} for keys %$s;
-
-            $s->{base_url} = $url;
-            process_server($s);
+            $n++;
+            die "Entry number $n in $_ is not a code reference\n" unless ref $sub eq 'CODE';
         }
     }
+
+    my $start = time;
+
+    if ($server->{skip})
+    {
+        print STDERR "Skipping Server Config: $server->{base_url}\n" unless $server->{quiet};
+        return;
+    }
+
+    require "HTTP/Cookies.pm" if $server->{use_cookies};
+    require "Digest/MD5.pm" if $server->{use_md5};
+
+    # set starting URL, and remove any specified fragment
+    my $uri = URI->new($server->{base_url});
+    $uri->fragment(undef);
+
+    if ($uri->userinfo)
+    {
+        die "Can't specify parameter 'credentials' because base_url defines them\n"
+            if $server->{credentials};
+        $server->{credentials} = $uri->userinfo;
+        $uri->userinfo(undef);
+    }
+
+    print STDERR "\n -- Starting to spider: $uri --\n";# if $server->{debug};
+
+    # set the starting server name (including port) -- will only spider on server:port
+
+    # All URLs will end up with this host:port
+    $server->{authority} = $uri->canonical->authority;
+
+    # All URLs must match this scheme (Jan 22, 2002 - spot by Darryl Friesen)
+    $server->{scheme} = $uri->scheme;
+
+    # Now, set the OK host:port names
+    $server->{same} = [ $uri->canonical->authority || '' ];
+
+    push @{$server->{same}}, @{$server->{same_hosts}} if ref $server->{same_hosts};
+
+    $server->{same_host_lookup} = { map { $_, 1 } @{$server->{same}} };
+
+    # set time to end
+    $server->{max_time} = $server->{max_time} * 60 + time
+        if $server->{max_time};
+
+
+
+    # get a user agent object
+    my $ua;
+
+    # set the delay
+    unless (defined $server->{delay_sec})
+    {
+        if (defined $server->{delay_min} && $server->{delay_min} =~ /^\d+\.?\d*$/)
+        {
+            # change if ever move to Time::HiRes
+            $server->{delay_sec} = int ($server->{delay_min} * 60);
+        }
+
+        $server->{delay_sec} = 5 unless defined $server->{delay_sec};
+    }
+    $server->{delay_sec} = 5 unless $server->{delay_sec} =~ /^\d+$/;
+
+    if ($server->{ignore_robots_file})
+    {
+        $ua = LWP::UserAgent->new;
+        return unless $ua;
+        $ua->agent($server->{agent});
+        $ua->from($server->{email});
+    }
+    else
+    {
+        $ua = LWP::RobotUA->new($server->{agent}, $server->{email});
+        return unless $ua;
+        $ua->delay(0);  # handle delay locally.
+    }
+
+    # If ignore robots files also ignore meta ignore <meta name="robots">
+    # comment out so can find http-equiv charset
+    # $ua->parse_head(0) if $server->{ignore_robots_file} || $server->{ignore_robots_headers};
+
+    # Set the timeout - used to only for windows and used alarm, but this
+    # did not always works correctly.  Hopefully $ua->timeout works better in
+    # current versions of LWP (before DNS could block forever)
+
+    $ua->timeout($server->{max_wait_time});
+
+    $server->{ua} = $ua;  # save it for fun.
+    # $ua->parse_head(0);   # Don't parse the content
+
+    $ua->cookie_jar(HTTP::Cookies->new) if $server->{use_cookies};
+
+    if ($server->{keep_alive})
+    {
+        if ($ua->can('conn_cache'))
+        {
+            my $keep_alive = $server->{keep_alive} =~ /^\d+$/ ? $server->{keep_alive} : 1;
+            $ua->conn_cache({ total_capacity => $keep_alive });
+
+        }
+        else
+        {
+            delete $server->{keep_alive};
+            warn "Can't use keep-alive: conn_cache method not available\n";
+        }
+    }
+
+    # Disable HEAD requests if there's no reason to use them
+    # Keep_alives is questionable because even without keep alives
+    # it might be faster to do a HEAD than a partial GET.
+    if ($server->{use_head_requests} && !$server->{keep_alive} ||
+        !($server->{test_response} || $server->{max_size}))
+    {
+        warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and either test_response or max_size options\n';
+        delete $server->{use_head_requests};
+    }
+
+    # uri, parent, depth
+    eval { spider($server, $uri) };
+    print STDERR $@ if $@;
+
+    delete $server->{ua};  # Free up LWP to avoid CLOSE_WAITs hanging around when using a lot of @servers.
+
+    return if $server->{quiet};
+
+    $start = time - $start;
+    $start++ unless $start;
+
+    my $max_width = 0;
+    my $max_num = 0;
+    for (keys %{$server->{counts}})
+    {
+        $max_width = length if length > $max_width;
+        my $val = commify($server->{counts}{$_});
+        $max_num = length $val if length $val > $max_num;
+    }
+
+    print STDERR "\nSummary for: $server->{base_url}\n";
+
+    for (sort keys %{$server->{counts}})
+    {
+        printf STDERR "%${max_width}s: %${max_num}s  (%0.1f/sec)\n",
+            $_,
+            commify($server->{counts}{$_}),
+            $server->{counts}{$_}/$start;
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     if (%bad_links)
     {
@@ -202,10 +389,7 @@ sub process_server
     # set defaults
 
     # Set debug options.
-    $server->{debug} =
-        defined $ENV{SPIDER_DEBUG}
-            ? $ENV{SPIDER_DEBUG}
-            : ($server->{debug} || 0);
+    $server->{debug} = defined $ENV{SPIDER_DEBUG} ? $ENV{SPIDER_DEBUG} : ($server->{debug} || 0);
 
     # Convert to number
     if ($server->{debug} !~ /^\d+$/)
@@ -221,7 +405,7 @@ sub process_server
         $server->{debug} = $debug;
     }
 
-    $server->{quiet} ||= $ENV{SPIDER_QUIET} || 0;
+    $server->{quiet} = 0;
 
     # Lame Microsoft
     $URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
@@ -1067,30 +1251,6 @@ sub just_log
 
 
     printf("%s - %s\n", $timestamp, $msg);
-}
-
-#===================================================================================
-# output_content -- formats content for swish-e
-#
-#-----------------------------------------------------------------------------------
-sub output_content
-{
-    my ($server, $content, $uri, $response) = @_;
-
-    $server->{indexed}++;
-
-    unless (length $$content)
-    {
-        print STDERR "Warning: document '", $response->request->uri, "' has no content\n";
-        $$content = ' ';
-    }
-
-    # ugly and maybe expensive, but perhaps more portable than "use bytes"
-    my $bytecount = length pack 'C0a*', $$content;
-
-    # Decode the URL
-    my $path = $uri;
-    $path =~ s/%([0-9a-fA-F]{2})/chr hex($1)/ge;
 }
 
 sub commify
