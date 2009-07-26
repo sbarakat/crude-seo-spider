@@ -105,21 +105,21 @@ this with the "perldoc" command you will not see the examples below.
     @ servers = ({
         #skip        => 0,  # skip spidering this server
 
-        base_url    => 'http://www.team-mediaportal.com/',
-        same_hosts  => [ 'team-mediaportal.com', 'wiki.team-mediaportal.com' ],
-        agent       => 'swish-e spider http://swish-e.org/',
-        email       => 'swish@domain.invalid',
+        #base_url    => 'http://www.team-mediaportal.com/',
+        #same_hosts  => [ 'team-mediaportal.com', 'wiki.team-mediaportal.com' ],
+        #agent       => 'swish-e spider http://swish-e.org/',
+        #email       => 'swish@domain.invalid',
 
         # limit to only .html files
         #test_url    => sub { $_[0]->path =~ /\.html?$/ },
 
-        delay_sec   => 0,         # Delay in seconds between requests
-        max_time    => 60,         # Max time to spider in minutes
+        #delay_sec   => 0,         # Delay in seconds between requests
+        #max_time    => 60,         # Max time to spider in minutes
         #max_indexed => 10,        # Max number of files to send to swish for indexing
         #keep_alive  => 1,         # enable keep alives requests
         #max_depth   => 3,
         #ignore_robots_file => 1,
-        use_md5 => 1,
+        #use_md5 => 1,
     } );
     1;
 
