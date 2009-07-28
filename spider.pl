@@ -4,8 +4,6 @@ use strict;
 # This is set to where Swish-e's "make install" installed the helper modules.
 use lib ('/usr/local/perl/lib');
 
-# $Id: spider.pl.in 1900 2007-02-07 17:28:56Z moseley $
-#
 # "prog" document source for spidering web servers
 #
 # For documentation, type:
@@ -25,7 +23,7 @@ use lib ('/usr/local/perl/lib');
 #    GNU General Public License for more details.
 #
 #    The above lines must remain at the top of this program
-#----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 
 $HTTP::URI_CLASS = "URI";   # prevent loading default URI::URL
                             # so we don't store long list of base items
@@ -33,23 +31,22 @@ $HTTP::URI_CLASS = "URI";   # prevent loading default URI::URL
 use LWP::RobotUA;
 use HTML::LinkExtor;
 use HTML::Tagset;
-use Time::HiRes qw(usleep ualarm gettimeofday tv_interval);
+use Time::HiRes qw(gettimeofday tv_interval);
+use Config::Tiny;
 
-use vars '$VERSION';
-#$VERSION = sprintf '%d.%02d', q$Revision: 1900 $ =~ /: (\d+)\.(\d+)/;
+use constant VERSION        => '1.0b';
+use constant MAX_SIZE       => 5_000_000;   # Max size of document to fetch
+use constant MAX_WAIT_TIME  => 30;          # request time.
+use constant MAX_REDIRECTS  => 20;  # keep from redirecting forever
 
 use vars '$bit';
 use constant DEBUG_URL      => $bit = 1;  # print out every URL processes
 use constant DEBUG_SKIPPED  => $bit <<= 1;  # didn't index for some reason
-use constant DEBUG_INFO     => $bit <<= 1;  # more verbose
 use constant DEBUG_LINKS    => $bit <<= 1;  # prints links as they are extracted
-
-use constant MAX_REDIRECTS  => 20;  # keep from redirecting forever
 
 my %DEBUG_MAP = (
     url         => DEBUG_URL,
     skipped     => DEBUG_SKIPPED,
-    info        => DEBUG_INFO,
     links       => DEBUG_LINKS,
 );
 
@@ -79,13 +76,6 @@ my @config_options = qw(
 );
 my %valid_config_options = map { $_ => 1 } @config_options;
 
-use constant MAX_SIZE       => 5_000_000;   # Max size of document to fetch
-use constant MAX_WAIT_TIME  => 30;          # request time.
-
-#Can't locate object method "host" via package "URI::mailto" at ../prog-bin/spider.pl line 473.
-#sub URI::mailto::host { return '' };
-
-
 # This is not the right way to do this.
 sub UNIVERSAL::host { '' };
 sub UNIVERSAL::port { '' };
@@ -93,26 +83,11 @@ sub UNIVERSAL::host_port { '' };
 sub UNIVERSAL::userinfo { '' };
 
 #-----------------------------------------------------------------------
-#use Config::Tiny;
-#my $Config = Config::Tiny->new();
-#$Config = Config::Tiny->read( "spider.conf" );
-#my $CFG_agent = $Config->{_}->{agent};
-#print "$CFG_agent\n";
-#exit;
 
-#use Config::Simple;
-#$cfg = new Config::Simple('spider.conf');
-#$agent = $cfg->param('agent');
-#print $agent;
-#exit;
+    print STDERR "Web Spider (v".VERSION.")\n\nCopyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n";
 
+    print STDERR $ARGV[0]."\n";
 
-
-
-#-----------------------------------------------------------------------
-
-    use Config::Tiny;
-    
     print STDERR "$0: Reading parameters from 'spider.conf'\n";
 
     my $Config = Config::Tiny->new();
@@ -128,7 +103,6 @@ sub UNIVERSAL::userinfo { '' };
 
     # To weed out
     $server->{debug} = 0;
-    $server->{quiet} = 0;
 
     # Read config options
     # Required
@@ -175,13 +149,11 @@ sub UNIVERSAL::userinfo { '' };
     $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
     $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
 
-    my $start = time;
+    my $my_file = "suphero.txt";
+    open(DAT,">$my_file") || die("This file will not open!");
+    close(DAT);
 
-    if ($server->{skip})
-    {
-        print STDERR "Skipping Server Config: $server->{base_url}\n" unless $server->{quiet};
-        return;
-    }
+    my $start = time;
 
     require "HTTP/Cookies.pm" if $server->{use_cookies};
     require "Digest/MD5.pm" if $server->{use_md5};
@@ -198,7 +170,7 @@ sub UNIVERSAL::userinfo { '' };
         $uri->userinfo(undef);
     }
 
-    print STDERR "$0: Starting to spider: $uri --\n\n";
+    print STDERR "$0: Starting to spider: $uri\n\n";
 
     # set the starting server name (including port) -- will only spider on server:port
 
@@ -265,7 +237,6 @@ sub UNIVERSAL::userinfo { '' };
         {
             my $keep_alive = $server->{keep_alive} =~ /^\d+$/ ? $server->{keep_alive} : 1;
             $ua->conn_cache({ total_capacity => $keep_alive });
-
         }
         else
         {
@@ -286,11 +257,10 @@ sub UNIVERSAL::userinfo { '' };
 
     # uri, parent, depth
     eval { spider($server, $uri) };
-    print STDERR $@ if $@;
+    printf STDERR ("%.90s",$@) if $@;
 
-    delete $server->{ua};  # Free up LWP to avoid CLOSE_WAITs hanging around when using a lot of @servers.
-
-    return if $server->{quiet};
+    # Free up LWP to avoid CLOSE_WAITs hanging
+    delete $server->{ua};
 
     $start = time - $start;
     $start++ unless $start;
@@ -495,9 +465,6 @@ sub process_link
         }
     }
 
-    # Don't log HEAD requests
-    #return $request if $request->method eq 'HEAD';
-
     # Check for meta refresh
     # requires that $ua->parse_head() is enabled (the default)
     if ($response->header('refresh') && $response->header('refresh') =~ /URL\s*=\s*(.+)/)
@@ -538,9 +505,7 @@ if (!$response || ref $response eq 'ARRAY')
         my $digest =  $response->header('Content-MD5') || Digest::MD5::md5($response->content);
         if ($visited{ $digest } && $uri ne $visited{ $digest })
         {
-            #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
-            log_response($status . ' Duplicate', $bytecount, $elapsed, $parent, $uri, $depth, "<= dupe of => $visited{ $digest }");
-                #if $uri ne $visited{ $digest } && $response->status_line =~ m/200 OK/i;
+            log_response($status . ' Duplicate', $bytecount, $elapsed, $parent, $uri, $depth, $visited{ $digest });
 
             $server->{counts}{Skipped}++;
             $server->{counts}{'MD5 Duplicates'}++;
@@ -655,7 +620,7 @@ sub make_request
 
             # Not really sure why request aborted.  Let's try and make the error message
             # a bit cleaner.
-            print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";# if $server->{debug}&DEBUG_SKIPPED;
+            print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";
         }
 
         # Aborting in the callback breaks the connection (so tested on Apache)
@@ -858,7 +823,7 @@ sub extract_links
         }
     }
 
-    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n\n" if $server->{debug} & DEBUG_INFO;
+    #print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n";
 
     return \@links;
 }
@@ -965,21 +930,28 @@ sub validate_link
 # Log a response
 sub log_response
 {
-    my ($status, $bytecount, $elapsed, $parent, $uri, $depth, $msg) = @_;
+    my ($status, $bytecount, $elapsed, $parent, $uri, $depth, $dupe) = @_;
 
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
 
     $bytecount = convert($bytecount);
 
-    if ($msg)
+    my $my_file = "results.txt";
+
+    open(DAT,">>$my_file") || die("This file will not open!");
+
+    if ($dupe)
     {
-        printf("%s - %-27s %6s %6.3fs - %s => %s %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $msg);
+        #printf DAT ("%s - %-27s %6s %6.3fs - %s => %s %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, " <= dupe of => $dupe");
     }
     else
     {
-        printf("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
+        #printf DAT ("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
     }
+
+    printf DAT ("%s,%s,%s,%s,%s,%s,%s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $dupe);
+    close(DAT);
 
     local $| = 1;
     printf STDERR "\r Spidering... %90s\r", " ";
