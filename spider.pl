@@ -66,13 +66,10 @@ my @config_options = qw(
     max_wait_time
     remove_leading_dots
     same_hosts
-    skip
     use_cookies
-    use_default_config
     use_head_requests
     use_md5
     validate_links
-    filter_object
 );
 my %valid_config_options = map { $_ => 1 } @config_options;
 
@@ -86,12 +83,12 @@ sub UNIVERSAL::userinfo { '' };
 
     print STDERR "Web Spider (v".VERSION.")\n\nCopyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n";
 
-    print STDERR $ARGV[0]."\n";
+    #print STDERR $ARGV[0]."\n";
 
     print STDERR "$0: Reading parameters from 'spider.conf'\n";
 
     my $Config = Config::Tiny->new();
-    $Config = Config::Tiny->read( "spider.conf" );
+    $Config = Config::Tiny->read("spider.conf");
 
     my $abort;
     local $SIG{HUP} = sub { warn "Caught SIGHUP\n"; $abort++ } unless $^O =~ /Win32/i;
@@ -108,48 +105,41 @@ sub UNIVERSAL::userinfo { '' };
     # Required
     $server->{base_url} = $Config->{_}->{base_url};
     @{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts});
-    
+
     # Optional
     $server->{agent} = $Config->{_}->{agent} || 'swish-e http://swish-e.org/';
     $server->{email} = $Config->{_}->{email} || 'swish@domain.invalid';
-    $server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
-    $server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
-    $server->{max_depth} = $Config->{_}->{max_depth};
-    $server->{credential_timeout} = $Config->{_}->{credential_timeout} || 30;
     $server->{delay_sec} = $Config->{_}->{delay_sec};
-    $server->{max_indexed} = $Config->{_}->{max_indexed};
     $server->{keep_alive} = $Config->{_}->{keep_alive};
     $server->{ignore_robots_file} = $Config->{_}->{ignore_robots_file};
     $server->{use_md5} = $Config->{_}->{use_md5};
+    $server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
+    $server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
+    $server->{max_depth} = $Config->{_}->{max_depth};
+    $server->{max_indexed} = $Config->{_}->{max_indexed};
     $server->{max_time} = $Config->{_}->{max_time} * 60 + time
         if $Config->{_}->{max_time};
+
+    @{$server->{link_tags}} = split(/,/, $Config->{_}->{link_tags});
+    
+    $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
+    $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
+
+    # Validate
+    die "Error: You must specify 'base_url' in your spider config settings\n" unless $server->{base_url};
+    die "Error: max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
+    die "Error: max_wait_time parameter '$server->{max_wait_time}' must be a number\n" unless $server->{max_wait_time} =~ /^\d+$/;
+    die "Error: max_depth parameter '$server->{max_depth}' must be a number\n" unless $server->{max_depth} =~ /^\d+/;
 
     # Lame Microsoft
     $URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
 
-    # Validate
-    die "You must specify 'base_url' in your spider config settings\n" if (!$server->{base_url});
-    die "max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
-    die "max_wait_time parameter '$server->{max_wait_time}' must be a number\n" if $server->{max_wait_time} !~ /^\d+$/;
-    die "max_depth parameter '$server->{max_depth}' must be a number\n" if defined $server->{max_depth} && $server->{max_depth} !~ /^\d+/;
-    die "credential_timeout '$server->{credential_timeout}' must be a number\n" if defined $server->{credential_timeout} && $server->{credential_timeout} !~ /^\d+$/;
-
-    # Can be zero or undef or a number.
-    #$server->{credential_timeout} = 30 unless exists $server->{credential_timeout};
-
-
 #link_tags           => [qw/ a frame /],
-#keep_alive          => 1,
 #test_url            => sub {  $_[0]->path !~ /\.(?:gif|jpeg|png)$/i },
 #test_response       => $response_sub,
 #use_head_requests   => 1,  # Due to the response sub
-#filter_content      => $filter_sub,
-#filter_object       => $filter,
 
-    $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
-    $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
-
-    my $my_file = "suphero.txt";
+    my $my_file = "spider.txt";
     open(DAT,">$my_file") || die("This file will not open!");
     close(DAT);
 
@@ -177,7 +167,7 @@ sub UNIVERSAL::userinfo { '' };
     # All URLs will end up with this host:port
     $server->{authority} = $uri->canonical->authority;
 
-    # All URLs must match this scheme (Jan 22, 2002 - spot by Darryl Friesen)
+    # All URLs must match this scheme
     $server->{scheme} = $uri->scheme;
 
     # Now, set the OK host:port names
@@ -227,7 +217,6 @@ sub UNIVERSAL::userinfo { '' };
     $ua->timeout($server->{max_wait_time});
 
     $server->{ua} = $ua;  # save it for fun.
-    # $ua->parse_head(0);   # Don't parse the content
 
     $ua->cookie_jar(HTTP::Cookies->new) if $server->{use_cookies};
 
@@ -248,16 +237,15 @@ sub UNIVERSAL::userinfo { '' };
     # Disable HEAD requests if there's no reason to use them
     # Keep_alives is questionable because even without keep alives
     # it might be faster to do a HEAD than a partial GET.
-    if ($server->{use_head_requests} && !$server->{keep_alive} ||
-        !($server->{test_response} || $server->{max_size}))
+    if ($server->{use_head_requests} && !$server->{keep_alive} || $server->{max_size})
     {
-        warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and either test_response or max_size options\n';
-        delete $server->{use_head_requests};
+        #warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and max_size options\n';
+        #delete $server->{use_head_requests};
     }
 
     # uri, parent, depth
     eval { spider($server, $uri) };
-    printf STDERR ("%.90s",$@) if $@;
+    printf STDERR ("\r%104s\r%s", " ", $@) if $@;
 
     # Free up LWP to avoid CLOSE_WAITs hanging
     delete $server->{ua};
@@ -295,11 +283,15 @@ sub UNIVERSAL::userinfo { '' };
         }
     }
 
-#----------- Non recursive spidering ---------------------------
+#=======================================================================
+# spider()
+#
+# Non recursive spidering
+#
 # Had problems with some versions of LWP where memory was not freed
 # after the URI objects went out of scope, so instead just maintain
 # a list of URI.
-# Should move this to a DBM or database.
+#-----------------------------------------------------------------------
 sub spider
 {
     my ($server, $uri) = @_;
@@ -336,7 +328,11 @@ sub spider
     }
 }
 
-#---------- Delay a request based on the delay time -------------
+#=======================================================================
+# delay_request()
+#
+# Delay a request based on the delay time
+#-----------------------------------------------------------------------
 sub delay_request
 {
     my ($server) = @_;
@@ -362,7 +358,7 @@ sub delay_request
     sleep($wait);
 }
 
-#================================================================================
+#=======================================================================
 # process_link()  - process a link from the list
 #
 # Can be called recursively (for auth and redirects)
@@ -380,7 +376,7 @@ sub delay_request
 # Makes request, tests response, logs, parsers and extracts links
 # Very ugly as this is some of the oldest code
 #
-#---------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub process_link
 {
     my ($server, $uri, $parent, $depth) = @_;
@@ -518,7 +514,6 @@ if (!$response || ref $response eq 'ARRAY')
         $visited{ $digest } = $uri;
     }
 
-    #        my ($status, $bytecount, $parent, $uri, $depth, $msg) = @_;
     log_response($status, $bytecount, $elapsed, $parent, $uri, $depth, '');
 
     return $redirect_url if ($redirect_url);
@@ -535,21 +530,19 @@ if (!$response || ref $response eq 'ARRAY')
     return $links_extracted;
 }
 
-#===================================================================================
-# make_request -- 
+#=======================================================================
+# make_request
 #
 # This only can deal with things that happen in a HEAD request.
-# Well, unless test for the method
 #
-# Hacke up function to make either a HEAD or GET request and test the response
+# Function to make either a HEAD or GET request
 # Returns one of three things:
 #   undef - stop processing and return
 #   and array ref - a list of URLs extracted (via recursive call)
 #   a HTTP::Response object
 #
-#
 # Yes it's a mess -- got pulled out of other code when adding HEAD requests
-#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub make_request
 {
     my ($request, $server, $uri, $parent, $depth) = @_;
@@ -570,7 +563,7 @@ sub make_request
         {
             my ($content, $response) = @_;
 
-            # First time, check response - this can die()
+            # First time, check response
             check_response($response, $server, $uri)
                 unless $server->{response_checked}++;
 
@@ -599,34 +592,26 @@ sub make_request
         # Make a HEAD request
         $response = $ua->simple_request($request);
 
-        # check_response - user callback can call die() so wrap in eval block
-        eval {
-            check_response($response, $server, $uri)
-                unless $server->{response_checked}++;
-        };
+        # check_response
+        check_response($response, $server, $uri)
+            unless $server->{response_checked}++;
+
         $response_aborted_msg = $@ if $@;
     }
 
-    # save the request completion time for delay between requests
+    # Save the request completion time for delay between requests
     $server->{last_response_time} = time;
 
-    # Ok, did the request abort for some reason?  (response checker called die())
+    # Ok, did the request abort for some reason? (response checker called die())
     if ($response_aborted_msg)
     {
-        # Log unless it's the callback (because the callback already logged it)
-        if ($response_aborted_msg !~ /test_response/)
-        {
-            $server->{counts}{Skipped}++;
+        $server->{counts}{Skipped}++;
 
-            # Not really sure why request aborted.  Let's try and make the error message
-            # a bit cleaner.
-            print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";
-        }
+        # Not really sure why request aborted. So just print the error
+        print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";
 
-        # Aborting in the callback breaks the connection (so tested on Apache)
-        # even if all the data was transmitted.
         # Might be smart to flag to abort but wait until the next chunk
-        # to really abort.  That might make so the connection would not get killed.
+        # to really abort. That might make so the connection would not get killed.
 
         delete $server->{keep_alive_connection} if $killed_connection;
         return;
@@ -649,9 +634,9 @@ sub make_request
     return $response;
 }
 
-#===================================================================
+#=======================================================================
 # check_response -- after resonse comes back from server
-#-------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub check_response
 {
     my ($response, $server, $uri) = @_;
@@ -675,10 +660,10 @@ sub check_response
     check_too_big($response, $server) if $server->{max_size};
 }
 
-#=====================================================================
+#=======================================================================
 # check_too_big -- see if document is too big
 # Die if it is too big.
-#--------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub check_too_big
 {
     my ($response, $server, $length) = @_;
@@ -690,12 +675,12 @@ sub check_too_big
         if $length > $server->{max_size};
 }
 
-#=============================================================================
+#=======================================================================
 # redirect_response -- deal with a 3xx redirect
 #
 # Returns link to follow
 #
-#----------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub redirect_response
 {
     my ($response, $server, $uri, $parent, $depth, $location, $description) = @_;
@@ -741,7 +726,7 @@ sub redirect_response
     return $u;
 }
 
-#==============================================================================================
+#=======================================================================
 #  Extract links from a text/html page
 #
 #   Call with:
@@ -749,7 +734,7 @@ sub redirect_response
 #       $content - ref to content
 #       $response - response object
 #
-#----------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub extract_links
 {
     my ($server, $content, $response) = @_;
@@ -828,7 +813,7 @@ sub extract_links
     return \@links;
 }
 
-#=============================================================================
+#=======================================================================
 # This function check's if a link should be added to the list to spider
 #
 #   Pass:
@@ -841,7 +826,7 @@ sub extract_links
 #   Calls the user function "test_url".  Link rewriting before spider
 #   can be done here.
 #
-#------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub check_link
 {
     my ($u, $server, $base, $tag, $attribute) = @_;
@@ -882,13 +867,13 @@ sub check_link
     return 1;
 }
 
-#=============================================================================
+#=======================================================================
 # This function is used to validate links that are off-site.
 #
 #   It's just a very basic link check routine that lets you validate the
 #   off-site links at the same time as indexing.  Just because we can.
 #
-#------------------------------------------------------------------------------
+#-----------------------------------------------------------------------
 sub validate_link
 {
     my ($server, $uri, $base, $response) = @_;
@@ -926,7 +911,7 @@ sub validate_link
     push @{$bad_links{ $base->canonical }}, $uri->canonical;
 }
 
-#==================================================================================
+#=======================================================================
 # Log a response
 sub log_response
 {
@@ -943,19 +928,18 @@ sub log_response
 
     if ($dupe)
     {
-        #printf DAT ("%s - %-27s %6s %6.3fs - %s => %s %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, " <= dupe of => $dupe");
+        printf DAT ("%s - %-27s %6s %6.3fs - %s => %s %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, " <= dupe of => $dupe");
     }
     else
     {
-        #printf DAT ("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
+        printf DAT ("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
     }
 
-    printf DAT ("%s,%s,%s,%s,%s,%s,%s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $dupe);
+    #printf DAT ("%s,%s,%s,%s,%s,%s,%s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $dupe);
     close(DAT);
 
     local $| = 1;
-    printf STDERR "\r Spidering... %90s\r", " ";
-    printf STDERR "\r Spidering... %.90s\r", $uri;
+    printf STDERR ("\r%104s\r Spidering... %.90s\r", " ", $uri);
 }
 
 
@@ -965,7 +949,6 @@ sub just_log
 
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
     my $timestamp = sprintf "%4d-%02d-%02d %02d:%02d:%02d", $year+1900,$mon+1,$mday,$hour,$min,$sec;
-
 
     printf("%s - %s\n", $timestamp, $msg);
 }
