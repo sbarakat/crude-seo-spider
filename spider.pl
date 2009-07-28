@@ -1,6 +1,15 @@
 #!/usr/bin/perl -w
 use strict;
 
+#=======================================================================
+# TODO
+#
+# Read command line parameters, at this stage just csv
+# Read rel="nofollow" on anchor tags
+# Read robots meta tag and apply nofollow
+# Allow all config options to be passed from command line
+#-----------------------------------------------------------------------
+
 # This is set to where Swish-e's "make install" installed the helper modules.
 use lib ('/usr/local/perl/lib');
 
@@ -761,7 +770,7 @@ sub extract_links
         # which tags to use (not reported in debug)
         my $attr = join ' ', map { qq[$_="$attr{$_}"] } keys %attr;
 
-        print STDERR "\nLooking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
+        print STDERR "Looking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
 
         unless ($server->{link_tags_lookup}{$tag})
         {
@@ -802,13 +811,10 @@ sub extract_links
             }
         }
 
-        if (!$found && $server->{debug} & DEBUG_LINKS)
-        {
-            print STDERR "  tag did not include any links to follow or is a duplicate\n";
-        }
+        print STDERR "  tag did not include any links to follow or is a duplicate\n" if (!$found && $server->{debug} & DEBUG_LINKS);
     }
 
-    #print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n";
+    print STDERR "! Found ", scalar @links, " links in ", $response->base, "\n" if $server->{debug} & DEBUG_LINKS;
 
     return \@links;
 }
