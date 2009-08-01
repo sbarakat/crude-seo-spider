@@ -108,7 +108,7 @@ sub UNIVERSAL::userinfo { '' };
     my $server;
 
     # To weed out
-    $server->{debug} = 0;
+    $server->{debug} = 4;
 
     # Read config options
     # Required
@@ -769,6 +769,9 @@ sub extract_links
 
         # which tags to use (not reported in debug)
         my $attr = join ' ', map { qq[$_="$attr{$_}"] } keys %attr;
+        
+        print STDERR join("\n",%attr),"\n";
+        #print 
 
         print STDERR "Looking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
 
