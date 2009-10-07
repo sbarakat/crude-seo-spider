@@ -1,25 +1,25 @@
 #!/usr/bin/perl -w
+
 use strict;
+use warnings;
+
+# For Windows
+use lib 'C:/spider/lib';
 
 #=======================================================================
 # TODO
 #
-# Read command line parameters, at this stage just csv
 # Read rel="nofollow" on anchor tags
 # Read robots meta tag and apply nofollow
 # Allow all config options to be passed from command line
 #-----------------------------------------------------------------------
-
-# This is set to where Swish-e's "make install" installed the helper modules.
-use lib ('/usr/local/perl/lib');
-
 # "prog" document source for spidering web servers
 #
 # For documentation, type:
 #
 #       perldoc spider.pl
 #
-#    Copyright (C) 2001-2003 Bill Moseley swishscript@hank.org
+#    Copyright (C) 2009 Sami Barakat sami@sbarakat.co.uk
 #
 #    This program is free software; you can redistribute it and/or
 #    modify it under the terms of the GNU General Public License
@@ -91,11 +91,46 @@ sub UNIVERSAL::userinfo { '' };
 #-----------------------------------------------------------------------
 
 
-    print STDERR "Web Spider (v".VERSION.")\n\nCopyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n";
+    print STDERR "Web Spider (v".VERSION.")\n";
+    print STDERR "Copyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n\n";
 
+    # Default command line parameters
+    my $results_file = "results.txt";
+    my $csv_file = "results.csv";
+    my $use_csv = 0;
+
+    # Read command line parameters
+    foreach my $num (0 .. $#ARGV)
+    {
+        if ($ARGV[$num] =~ m/--csv=(.+)/)
+        {
+            $csv_file = $1;
+            $use_csv = 1;
+        }
+        if ($ARGV[$num] =~ m/-csv/)
+        {
+            $use_csv = 1;
+        }
+        if ($ARGV[$num] =~ m/-h/)
+        {
+            print_usage();
+            exit();
+        }
+    }
+
+    # Test output files can be opened and clear them
+    open(DAT, ">$results_file") || die("Error: Cannot open file $results_file");
+    close(DAT);
+
+    if ($use_csv)
+    {
+        open(DAT, ">$csv_file") || die("Error: Cannot open file $csv_file");
+        printf DAT ("Timestamp,Status,Size,Load Time,Parent Page,URL,Duplicate URL\n");
+        close(DAT);
+    }
+
+    print STDERR " Reading parameters from 'spider.conf'\n";
     #print STDERR $ARGV[0]."\n";
-
-    print STDERR "$0: Reading parameters from 'spider.conf'\n";
 
     my $Config = Config::Tiny->new();
     $Config = Config::Tiny->read("spider.conf");
@@ -117,8 +152,8 @@ sub UNIVERSAL::userinfo { '' };
     @{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts});
 
     # Optional
-    $server->{agent} = $Config->{_}->{agent} || 'swish-e http://swish-e.org/';
-    $server->{email} = $Config->{_}->{email} || 'swish@domain.invalid';
+    $server->{agent} = $Config->{_}->{agent} || 'spider http://example.com/';
+    $server->{email} = $Config->{_}->{email} || 'spider@domain.invalid';
     $server->{delay_sec} = $Config->{_}->{delay_sec};
     $server->{keep_alive} = $Config->{_}->{keep_alive};
     $server->{ignore_robots_file} = $Config->{_}->{ignore_robots_file};
@@ -131,7 +166,7 @@ sub UNIVERSAL::userinfo { '' };
         if $Config->{_}->{max_time};
 
     @{$server->{link_tags}} = split(/,/, $Config->{_}->{link_tags});
-    
+
     $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
     $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
 
@@ -148,10 +183,6 @@ sub UNIVERSAL::userinfo { '' };
 #test_url            => sub {  $_[0]->path !~ /\.(?:gif|jpeg|png)$/i },
 #test_response       => $response_sub,
 #use_head_requests   => 1,  # Due to the response sub
-
-    my $my_file = "spider.txt";
-    open(DAT,">$my_file") || die("This file will not open!");
-    close(DAT);
 
     my $start = time;
 
@@ -170,7 +201,7 @@ sub UNIVERSAL::userinfo { '' };
         $uri->userinfo(undef);
     }
 
-    print STDERR "$0: Starting to spider: $uri\n\n";
+    print STDERR " Starting to spider: $uri\n\n";
 
     # set the starting server name (including port) -- will only spider on server:port
 
@@ -528,7 +559,7 @@ if (!$response || ref $response eq 'ARRAY')
 
     return $redirect_url if ($redirect_url);
 
-    die "$0: Max indexed files Reached\n"
+    die " Max indexed files Reached\n"
         if $server->{max_indexed} && $server->{counts}{'Total Docs'} >= $server->{max_indexed};
 
     return unless ($content);
@@ -630,7 +661,7 @@ sub make_request
     # Look for connection.  Assume it's a keep-alive unless we get a Connection: close
     # header.  Some server errors (on Apache) will close the connection, but they
     # report it.
-    # Have to assume the connection is open (without asking LWP) since the first 
+    # Have to assume the connection is open (without asking LWP) since the first
     # connection we normally do not see (robots.txt) and then following keep-alive
     # connections do not have Connection: header.
 
@@ -770,9 +801,9 @@ sub extract_links
 
         # which tags to use (not reported in debug)
         my $attr = join ' ', map { qq[$_="$attr{$_}"] } keys %attr;
-        
+
         #print STDERR join("\n",%attr),"\n";
-        #print 
+        #print
 
         print STDERR "Looking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
 
@@ -921,11 +952,9 @@ sub validate_link
     push @{$bad_links{ $base->canonical }}, $uri->canonical;
 }
 
-
-
-
 #=======================================================================
 # Log a response
+#-----------------------------------------------------------------------
 sub log_response
 {
     my ($status, $bytecount, $elapsed, $parent, $uri, $depth, $dupe) = @_;
@@ -935,9 +964,7 @@ sub log_response
 
     $bytecount = convert($bytecount);
 
-    my $my_file = "results.txt";
-
-    open(DAT,">>$my_file") || die("This file will not open!");
+    open(DAT,">>$results_file") || die("Error: Cannot open file $results_file");
 
     if ($dupe)
     {
@@ -948,14 +975,19 @@ sub log_response
         printf DAT ("%s - %-27s %6s %6.3fs - %s => %s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri);
     }
 
-    #printf DAT ("%s,%s,%s,%s,%s,%s,%s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $dupe);
     close(DAT);
+
+    if ($use_csv)
+    {
+        open(DAT,">>$csv_file") || die("Error: Cannot open file $csv_file");
+        printf DAT ("%s,%s,%s,%s,%s,%s,%s\n", $timestamp, $status, $bytecount, $elapsed, $parent, $uri, $dupe);
+        close(DAT);
+    }
 
     local $| = 1;
     #printf STDERR ("%104s\r Spidering... %.90s\r", " ", $uri);
     back_and_print( "Spidering... $uri" );
 }
-
 
 sub just_log
 {
@@ -974,37 +1006,50 @@ sub commify
     return $_;
 }
 
-sub convert {
-  my $size = shift;
-  my @args = qw/b K M G/;
- 
-  while (@args && $size > 1024) {
-    shift @args;
-    $size /= 1024;
-  }
- 
-  $size = sprintf("%.1f",$size);
- 
-  return "$size$args[0]";
+sub convert
+{
+    my $size = shift;
+    my @args = qw/b K M G/;
+
+    while (@args && $size > 1024)
+    {
+        shift @args;
+        $size /= 1024;
+    }
+
+    $size = sprintf("%.1f",$size);
+
+    return "$size$args[0]";
 }
 
 #my $Backup_Count = 0;
-sub back_and_print {
-  my $text = shift @_;  # no tabs, no newlines!
+sub back_and_print
+{
+    my $text = shift @_;  # no tabs, no newlines!
 
-  #print STDERR "\b" x $Backup_Count, " " x $Backup_Count, "\b" x $Backup_Count;
-  #$Backup_Count = length $text;
+    #print STDERR "\b" x $Backup_Count, " " x $Backup_Count, "\b" x $Backup_Count;
+    #$Backup_Count = length $text;
 
-  if (length $text > 80)
-  {
-    $text =~ s/(.{27}).*(.{50,})/$1...$2/;
-  }
-  print STDERR "\e[1K\r";
-  print STDERR $text;
+    if (length $text > 79)
+    {
+        $text =~ s/(.{27}).*(.{50,})/$1...$2/;
+    }
+    print STDERR "\r", " " x 79, "\r";
+    #print STDERR "\e[1K\r";
+    print STDERR $text;
 
-  #http://www.perlmonks.org/?node_id=699555
-  #\e[1K - clear from cursor to beginning of the line
-  #\r    - goto beginning of the line
-  #\e[1J - clear from cursor to beginning of the screen.
-  #\e[H  - Moves the cursor to top left corner
+    #http://www.perlmonks.org/?node_id=699555
+    #\e[1K - clear from cursor to beginning of the line
+    #\r    - goto beginning of the line
+    #\e[1J - clear from cursor to beginning of the screen.
+    #\e[H  - Moves the cursor to top left corner
+}
+
+sub print_usage
+{
+    print "Usage: perl $0 [OPTION]\n\n";
+    print "Optinal:\n";
+    print "  -h,  --help               print this help\n";
+    print "  -csv,  --csv=FILE         output to CSV file\n";
+    print "\n";
 }
