@@ -90,6 +90,7 @@ sub UNIVERSAL::userinfo { '' };
 
 #-----------------------------------------------------------------------
 
+
     print STDERR "Web Spider (v".VERSION.")\n\nCopyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n";
 
     #print STDERR $ARGV[0]."\n";
@@ -920,6 +921,9 @@ sub validate_link
     push @{$bad_links{ $base->canonical }}, $uri->canonical;
 }
 
+
+
+
 #=======================================================================
 # Log a response
 sub log_response
@@ -948,7 +952,8 @@ sub log_response
     close(DAT);
 
     local $| = 1;
-    printf STDERR ("\r%104s\r Spidering... %.90s\r", " ", $uri);
+    #printf STDERR ("%104s\r Spidering... %.90s\r", " ", $uri);
+    back_and_print( "Spidering... $uri" );
 }
 
 
@@ -981,4 +986,25 @@ sub convert {
   $size = sprintf("%.1f",$size);
  
   return "$size$args[0]";
+}
+
+#my $Backup_Count = 0;
+sub back_and_print {
+  my $text = shift @_;  # no tabs, no newlines!
+
+  #print STDERR "\b" x $Backup_Count, " " x $Backup_Count, "\b" x $Backup_Count;
+  #$Backup_Count = length $text;
+
+  if (length $text > 80)
+  {
+    $text =~ s/(.{27}).*(.{50,})/$1...$2/;
+  }
+  print STDERR "\e[1K\r";
+  print STDERR $text;
+
+  #http://www.perlmonks.org/?node_id=699555
+  #\e[1K - clear from cursor to beginning of the line
+  #\r    - goto beginning of the line
+  #\e[1J - clear from cursor to beginning of the screen.
+  #\e[H  - Moves the cursor to top left corner
 }
