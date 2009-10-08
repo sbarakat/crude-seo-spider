@@ -34,6 +34,7 @@ use lib '/home/sami/sandbox/perl_spider/lib';
 #=======================================================================
 # TODO
 #
+# max_depth never increments
 # Read robots meta tag and apply nofollow,noindex
 # Allow all config options to be passed from command line
 #-----------------------------------------------------------------------
@@ -135,7 +136,6 @@ sub UNIVERSAL::userinfo { '' };
     }
 
     print STDERR " Reading parameters from 'spider.conf'\n";
-    #print STDERR $ARGV[0]."\n";
 
     my $Config = Config::Tiny->new();
     $Config = Config::Tiny->read("spider.conf");
