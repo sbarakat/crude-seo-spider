@@ -4,15 +4,12 @@ use strict;
 use warnings;
 
 # For Windows
-use lib 'C:/spider/lib';
+#use lib 'C:/spider/lib';
+
+# For Linux
+use lib '/home/sami/sandbox/perl_spider/lib';
 
 #=======================================================================
-# TODO
-#
-# Read rel="nofollow" on anchor tags
-# Read robots meta tag and apply nofollow
-# Allow all config options to be passed from command line
-#-----------------------------------------------------------------------
 # "prog" document source for spidering web servers
 #
 # For documentation, type:
@@ -34,11 +31,19 @@ use lib 'C:/spider/lib';
 #    The above lines must remain at the top of this program
 #-----------------------------------------------------------------------
 
+#=======================================================================
+# TODO
+#
+# Read robots meta tag and apply nofollow,noindex
+# Allow all config options to be passed from command line
+#-----------------------------------------------------------------------
+
 $HTTP::URI_CLASS = "URI";   # prevent loading default URI::URL
                             # so we don't store long list of base items
                             # and eat up memory with >= URI 1.13
 use LWP::RobotUA;
-use HTML::LinkExtor;
+use HTML::LinkExtorRel;
+#use HTML::RelExtor;
 use HTML::Tagset;
 use Time::HiRes qw(gettimeofday tv_interval);
 use Config::Tiny;
@@ -149,7 +154,8 @@ sub UNIVERSAL::userinfo { '' };
     # Read config options
     # Required
     $server->{base_url} = $Config->{_}->{base_url};
-    @{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts});
+    @{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts})
+        if $Config->{_}->{same_hosts};
 
     # Optional
     $server->{agent} = $Config->{_}->{agent} || 'spider http://example.com/';
@@ -157,6 +163,7 @@ sub UNIVERSAL::userinfo { '' };
     $server->{delay_sec} = $Config->{_}->{delay_sec};
     $server->{keep_alive} = $Config->{_}->{keep_alive};
     $server->{ignore_robots_file} = $Config->{_}->{ignore_robots_file};
+    $server->{ignore_nofollow} = $Config->{_}->{ignore_nofollow};
     $server->{use_md5} = $Config->{_}->{use_md5};
     $server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
     $server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
@@ -649,7 +656,7 @@ sub make_request
         $server->{counts}{Skipped}++;
 
         # Not really sure why request aborted. So just print the error
-        print STDERR "Request for '$uri' aborted because: '$response_aborted_msg'\n";
+        print STDERR "\n\nRequest for '$uri' aborted because: '$response_aborted_msg'\n";
 
         # Might be smart to flag to abort but wait until the next chunk
         # to really abort. That might make so the connection would not get killed.
@@ -790,22 +797,27 @@ sub extract_links
     my $base = $response->base;
     $visited{ $base }++;  # $$$ come back and fix this (see 4/20/03 lwp post)
 
-    my $p = HTML::LinkExtor->new;
+    my $p = HTML::LinkExtorRel->new;
+    #my $p = HTML::RelExtor->new();
     $p->parse($$content);
 
     my %skipped_tags;
+    my $nofollow;
 
     for ($p->links)
     {
-        my ($tag, %attr) = @$_;
+        my ($tag, $nofollow, %attr) = @$_;
 
         # which tags to use (not reported in debug)
         my $attr = join ' ', map { qq[$_="$attr{$_}"] } keys %attr;
 
-        #print STDERR join("\n",%attr),"\n";
-        #print
-
         print STDERR "Looking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
+
+        if (!$nofollow && $server->{ignore_nofollow})
+        {
+            print STDERR "   nofollow tag skipped\n" if $server->{debug} & DEBUG_LINKS && !$skipped_tags{$tag}++;
+            next;
+        }
 
         unless ($server->{link_tags_lookup}{$tag})
         {
@@ -830,9 +842,10 @@ sub extract_links
 
         my $found;
 
-        # Now, check each attribut to see if a link exists
+        # Now, check each attribute to see if a link exists
         for my $attribute (@$links)
         {
+            #print STDERR "ATTTT-$attribute";
             if ($attr{ $attribute }) # ok tag
             {
                 # Create a URI object
@@ -1032,7 +1045,7 @@ sub back_and_print
 
     if (length $text > 79)
     {
-        $text =~ s/(.{27}).*(.{50,})/$1...$2/;
+        $text =~ s/(.{26}).*(.{50,})/$1...$2/;
     }
     print STDERR "\r", " " x 79, "\r";
     #print STDERR "\e[1K\r";
