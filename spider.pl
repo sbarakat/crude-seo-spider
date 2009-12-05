@@ -813,7 +813,7 @@ sub extract_links
 
         print STDERR "Looking at extracted tag '<$tag $attr>'\n" if $server->{debug} & DEBUG_LINKS;
 
-        if (!$nofollow && $server->{ignore_nofollow})
+        unless ($nofollow || $server->{ignore_nofollow})
         {
             print STDERR "   nofollow tag skipped\n" if $server->{debug} & DEBUG_LINKS && !$skipped_tags{$tag}++;
             next;
