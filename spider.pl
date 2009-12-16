@@ -18,6 +18,9 @@ use lib '/home/sami/sandbox/perl_spider/lib';
 #
 #    Copyright (C) 2009 Sami Barakat sami@sbarakat.co.uk
 #
+#    Original code sourced from the Swish-e project 
+#     http://swish-e.org/
+#
 #    This program is free software; you can redistribute it and/or
 #    modify it under the terms of the GNU General Public License
 #    as published by the Free Software Foundation; either version
