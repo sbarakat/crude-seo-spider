@@ -10,13 +10,12 @@ use warnings;
 use lib '/path/to/lib';
 
 #=======================================================================
-# "prog" document source for spidering web servers
+#  Crude SEO Spider
+#    Sript for spidering a website and providing information to assist
+#    in search engine optimisation.
 #
-# For documentation, type:
-#
-#       perldoc spider.pl
-#
-#    Copyright (C) 2009 Sami Barakat sami@sbarakat.co.uk
+#    Copyright (C) 2001-2003 Bill Moseley swishscript@hank.org
+#    Copyright (C) 2009-2011 Sami Barakat sami@sbarakat.co.uk
 #
 #    Original code sourced from the Swish-e project 
 #     http://swish-e.org/
@@ -99,7 +98,7 @@ sub UNIVERSAL::userinfo { '' };
 
 #-----------------------------------------------------------------------
 
-print STDERR "Web Spider (v".VERSION.")\n";
+print STDERR "Crude SEO Spider (v".VERSION.")\n";
 print STDERR "Copyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n\n";
 
 # Default command line parameters
