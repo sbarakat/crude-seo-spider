@@ -4,10 +4,10 @@ use strict;
 use warnings;
 
 # For Windows
-#use lib 'C:/spider/lib';
+#use lib 'C:/path/to/lib';
 
 # For Linux
-use lib '/home/sami/sandbox/perl_spider/lib';
+use lib '/path/to/lib';
 
 #=======================================================================
 # "prog" document source for spidering web servers
@@ -99,240 +99,239 @@ sub UNIVERSAL::userinfo { '' };
 
 #-----------------------------------------------------------------------
 
+print STDERR "Web Spider (v".VERSION.")\n";
+print STDERR "Copyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n\n";
 
-    print STDERR "Web Spider (v".VERSION.")\n";
-    print STDERR "Copyright (C) 2009 Sami Barakat <sami\@sbarakat.co.uk>\n\n";
+# Default command line parameters
+my $results_file = "results.txt";
+my $csv_file = "results.csv";
+my $use_csv = 0;
 
-    # Default command line parameters
-    my $results_file = "results.txt";
-    my $csv_file = "results.csv";
-    my $use_csv = 0;
-
-    # Read command line parameters
-    foreach my $num (0 .. $#ARGV)
+# Read command line parameters
+foreach my $num (0 .. $#ARGV)
+{
+    if ($ARGV[$num] =~ m/--csv=(.+)/)
     {
-        if ($ARGV[$num] =~ m/--csv=(.+)/)
-        {
-            $csv_file = $1;
-            $use_csv = 1;
-        }
-        if ($ARGV[$num] =~ m/-csv/)
-        {
-            $use_csv = 1;
-        }
-        if ($ARGV[$num] =~ m/-h/)
-        {
-            print_usage();
-            exit();
-        }
+        $csv_file = $1;
+        $use_csv = 1;
     }
+    if ($ARGV[$num] =~ m/-csv/)
+    {
+        $use_csv = 1;
+    }
+    if ($ARGV[$num] =~ m/-h/)
+    {
+        print_usage();
+        exit();
+    }
+}
 
-    # Test output files can be opened and clear them
-    open(DAT, ">$results_file") || die("Error: Cannot open file $results_file");
+# Test output files can be opened and clear them
+open(DAT, ">$results_file") || die("Error: Cannot open file $results_file");
+close(DAT);
+
+if ($use_csv)
+{
+    open(DAT, ">$csv_file") || die("Error: Cannot open file $csv_file");
+    printf DAT ("Timestamp,Status,Size,Load Time,Parent Page,URL,Duplicate URL\n");
     close(DAT);
+}
 
-    if ($use_csv)
-    {
-        open(DAT, ">$csv_file") || die("Error: Cannot open file $csv_file");
-        printf DAT ("Timestamp,Status,Size,Load Time,Parent Page,URL,Duplicate URL\n");
-        close(DAT);
-    }
+print STDERR " Reading parameters from 'spider.conf'\n";
 
-    print STDERR " Reading parameters from 'spider.conf'\n";
+my $Config = Config::Tiny->new();
+$Config = Config::Tiny->read("spider.conf");
 
-    my $Config = Config::Tiny->new();
-    $Config = Config::Tiny->read("spider.conf");
+my $abort;
+local $SIG{HUP} = sub { warn "Caught SIGHUP\n"; $abort++ } unless $^O =~ /Win32/i;
 
-    my $abort;
-    local $SIG{HUP} = sub { warn "Caught SIGHUP\n"; $abort++ } unless $^O =~ /Win32/i;
+my %visited;
+my %validated;
+my %bad_links;
+my $server;
 
-    my %visited;
-    my %validated;
-    my %bad_links;
-    my $server;
+# To weed out
+$server->{debug} = 0;
 
-    # To weed out
-    $server->{debug} = 0;
+# Read config options
+# Required
+$server->{base_url} = $Config->{_}->{base_url};
+@{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts})
+    if $Config->{_}->{same_hosts};
 
-    # Read config options
-    # Required
-    $server->{base_url} = $Config->{_}->{base_url};
-    @{$server->{same_hosts}} = split(/,/, $Config->{_}->{same_hosts})
-        if $Config->{_}->{same_hosts};
+# Optional
+$server->{agent} = $Config->{_}->{agent} || 'spider http://example.com/';
+$server->{email} = $Config->{_}->{email} || 'spider@domain.invalid';
+$server->{delay_sec} = $Config->{_}->{delay_sec};
+$server->{keep_alive} = $Config->{_}->{keep_alive};
+$server->{ignore_robots_file} = $Config->{_}->{ignore_robots_file};
+$server->{ignore_nofollow} = $Config->{_}->{ignore_nofollow};
+$server->{use_md5} = $Config->{_}->{use_md5};
+$server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
+$server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
+$server->{max_depth} = $Config->{_}->{max_depth};
+$server->{max_indexed} = $Config->{_}->{max_indexed};
+$server->{max_time} = $Config->{_}->{max_time} * 60 + time
+    if $Config->{_}->{max_time};
 
-    # Optional
-    $server->{agent} = $Config->{_}->{agent} || 'spider http://example.com/';
-    $server->{email} = $Config->{_}->{email} || 'spider@domain.invalid';
-    $server->{delay_sec} = $Config->{_}->{delay_sec};
-    $server->{keep_alive} = $Config->{_}->{keep_alive};
-    $server->{ignore_robots_file} = $Config->{_}->{ignore_robots_file};
-    $server->{ignore_nofollow} = $Config->{_}->{ignore_nofollow};
-    $server->{use_md5} = $Config->{_}->{use_md5};
-    $server->{max_size} = $Config->{_}->{max_size} || MAX_SIZE;
-    $server->{max_wait_time} = $Config->{_}->{max_wait_time} || MAX_WAIT_TIME;
-    $server->{max_depth} = $Config->{_}->{max_depth};
-    $server->{max_indexed} = $Config->{_}->{max_indexed};
-    $server->{max_time} = $Config->{_}->{max_time} * 60 + time
-        if $Config->{_}->{max_time};
+@{$server->{link_tags}} = split(/,/, $Config->{_}->{link_tags});
 
-    @{$server->{link_tags}} = split(/,/, $Config->{_}->{link_tags});
+$server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
+$server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
 
-    $server->{link_tags} = ['a'] unless ref $server->{link_tags} eq 'ARRAY';
-    $server->{link_tags_lookup} = { map { lc, 1 } @{$server->{link_tags}} };
+# Validate
+die "Error: You must specify 'base_url' in your spider config settings\n" unless $server->{base_url};
+die "Error: max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
+die "Error: max_wait_time parameter '$server->{max_wait_time}' must be a number\n" unless $server->{max_wait_time} =~ /^\d+$/;
+die "Error: max_depth parameter '$server->{max_depth}' must be a number\n" unless $server->{max_depth} =~ /^\d+/;
 
-    # Validate
-    die "Error: You must specify 'base_url' in your spider config settings\n" unless $server->{base_url};
-    die "Error: max_size parameter '$server->{max_size}' must be a number\n" unless $server->{max_size} =~ /^\d+$/;
-    die "Error: max_wait_time parameter '$server->{max_wait_time}' must be a number\n" unless $server->{max_wait_time} =~ /^\d+$/;
-    die "Error: max_depth parameter '$server->{max_depth}' must be a number\n" unless $server->{max_depth} =~ /^\d+/;
-
-    # Lame Microsoft
-    $URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
+# Lame Microsoft
+$URI::ABS_REMOTE_LEADING_DOTS = $server->{remove_leading_dots} ? 1 : 0;
 
 #link_tags           => [qw/ a frame /],
 #test_url            => sub {  $_[0]->path !~ /\.(?:gif|jpeg|png)$/i },
 #test_response       => $response_sub,
 #use_head_requests   => 1,  # Due to the response sub
 
-    my $start = time;
+my $start = time;
 
-    require "HTTP/Cookies.pm" if $server->{use_cookies};
-    require "Digest/MD5.pm" if $server->{use_md5};
+require "HTTP/Cookies.pm" if $server->{use_cookies};
+require "Digest/MD5.pm" if $server->{use_md5};
 
-    # set starting URL, and remove any specified fragment
-    my $uri = URI->new($server->{base_url});
-    $uri->fragment(undef);
+# set starting URL, and remove any specified fragment
+my $uri = URI->new($server->{base_url});
+$uri->fragment(undef);
 
-    if ($uri->userinfo)
+if ($uri->userinfo)
+{
+    die "Can't specify parameter 'credentials' because base_url defines them\n"
+        if $server->{credentials};
+    $server->{credentials} = $uri->userinfo;
+    $uri->userinfo(undef);
+}
+
+print STDERR " Starting to spider: $uri\n\n";
+
+# set the starting server name (including port) -- will only spider on server:port
+
+# All URLs will end up with this host:port
+$server->{authority} = $uri->canonical->authority;
+
+# All URLs must match this scheme
+$server->{scheme} = $uri->scheme;
+
+# Now, set the OK host:port names
+$server->{same} = [ $uri->canonical->authority || '' ];
+
+push @{$server->{same}}, @{$server->{same_hosts}} if ref $server->{same_hosts};
+$server->{same_host_lookup} = { map { $_, 1 } @{$server->{same}} };
+
+# get a user agent object
+my $ua;
+
+# set the delay
+unless (defined $server->{delay_sec})
+{
+    if (defined $server->{delay_min} && $server->{delay_min} =~ /^\d+\.?\d*$/)
     {
-        die "Can't specify parameter 'credentials' because base_url defines them\n"
-            if $server->{credentials};
-        $server->{credentials} = $uri->userinfo;
-        $uri->userinfo(undef);
+        # change if ever move to Time::HiRes
+        $server->{delay_sec} = int ($server->{delay_min} * 60);
     }
 
-    print STDERR " Starting to spider: $uri\n\n";
+    $server->{delay_sec} = 5 unless defined $server->{delay_sec};
+}
+$server->{delay_sec} = 5 unless $server->{delay_sec} =~ /^\d+$/;
 
-    # set the starting server name (including port) -- will only spider on server:port
+if ($server->{ignore_robots_file})
+{
+    $ua = LWP::UserAgent->new;
+    return unless $ua;
+    $ua->agent($server->{agent});
+    $ua->from($server->{email});
+}
+else
+{
+    $ua = LWP::RobotUA->new($server->{agent}, $server->{email});
+    return unless $ua;
+    $ua->delay(0);  # handle delay locally.
+}
 
-    # All URLs will end up with this host:port
-    $server->{authority} = $uri->canonical->authority;
+# If ignore robots files also ignore meta ignore <meta name="robots">
+# comment out so can find http-equiv charset
+# $ua->parse_head(0) if $server->{ignore_robots_file} || $server->{ignore_robots_headers};
 
-    # All URLs must match this scheme
-    $server->{scheme} = $uri->scheme;
+# Set the timeout - used to only for windows and used alarm, but this
+# did not always works correctly.  Hopefully $ua->timeout works better in
+# current versions of LWP (before DNS could block forever)
 
-    # Now, set the OK host:port names
-    $server->{same} = [ $uri->canonical->authority || '' ];
+$ua->timeout($server->{max_wait_time});
 
-    push @{$server->{same}}, @{$server->{same_hosts}} if ref $server->{same_hosts};
-    $server->{same_host_lookup} = { map { $_, 1 } @{$server->{same}} };
+$server->{ua} = $ua;  # save it for fun.
 
-    # get a user agent object
-    my $ua;
+$ua->cookie_jar(HTTP::Cookies->new) if $server->{use_cookies};
 
-    # set the delay
-    unless (defined $server->{delay_sec})
+if ($server->{keep_alive})
+{
+    if ($ua->can('conn_cache'))
     {
-        if (defined $server->{delay_min} && $server->{delay_min} =~ /^\d+\.?\d*$/)
-        {
-            # change if ever move to Time::HiRes
-            $server->{delay_sec} = int ($server->{delay_min} * 60);
-        }
-
-        $server->{delay_sec} = 5 unless defined $server->{delay_sec};
-    }
-    $server->{delay_sec} = 5 unless $server->{delay_sec} =~ /^\d+$/;
-
-    if ($server->{ignore_robots_file})
-    {
-        $ua = LWP::UserAgent->new;
-        return unless $ua;
-        $ua->agent($server->{agent});
-        $ua->from($server->{email});
+        my $keep_alive = $server->{keep_alive} =~ /^\d+$/ ? $server->{keep_alive} : 1;
+        $ua->conn_cache({ total_capacity => $keep_alive });
     }
     else
     {
-        $ua = LWP::RobotUA->new($server->{agent}, $server->{email});
-        return unless $ua;
-        $ua->delay(0);  # handle delay locally.
+        delete $server->{keep_alive};
+        warn "Can't use keep-alive: conn_cache method not available\n";
     }
+}
 
-    # If ignore robots files also ignore meta ignore <meta name="robots">
-    # comment out so can find http-equiv charset
-    # $ua->parse_head(0) if $server->{ignore_robots_file} || $server->{ignore_robots_headers};
+# Disable HEAD requests if there's no reason to use them
+# Keep_alives is questionable because even without keep alives
+# it might be faster to do a HEAD than a partial GET.
+if ($server->{use_head_requests} && !$server->{keep_alive} || $server->{max_size})
+{
+    #warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and max_size options\n';
+    #delete $server->{use_head_requests};
+}
 
-    # Set the timeout - used to only for windows and used alarm, but this
-    # did not always works correctly.  Hopefully $ua->timeout works better in
-    # current versions of LWP (before DNS could block forever)
+# uri, parent, depth
+eval { spider($server, $uri) };
+printf STDERR ("\r%104s\r%s", " ", $@) if $@;
 
-    $ua->timeout($server->{max_wait_time});
+# Free up LWP to avoid CLOSE_WAITs hanging
+delete $server->{ua};
 
-    $server->{ua} = $ua;  # save it for fun.
+$start = time - $start;
+$start++ unless $start;
 
-    $ua->cookie_jar(HTTP::Cookies->new) if $server->{use_cookies};
+my $max_width = 0;
+my $max_num = 0;
+for (keys %{$server->{counts}})
+{
+    $max_width = length if length > $max_width;
+    my $val = commify($server->{counts}{$_});
+    $max_num = length $val if length $val > $max_num;
+}
 
-    if ($server->{keep_alive})
+print STDERR "\nSummary for: $server->{base_url}\n";
+
+for (sort keys %{$server->{counts}})
+{
+    printf STDERR "%${max_width}s: %${max_num}s  (%0.1f/sec)\n",
+        $_,
+        commify($server->{counts}{$_}),
+        $server->{counts}{$_}/$start;
+}
+
+if (%bad_links)
+{
+    print STDERR "\nBad Links:\n\n";
+    foreach my $page (sort keys %bad_links)
     {
-        if ($ua->can('conn_cache'))
-        {
-            my $keep_alive = $server->{keep_alive} =~ /^\d+$/ ? $server->{keep_alive} : 1;
-            $ua->conn_cache({ total_capacity => $keep_alive });
-        }
-        else
-        {
-            delete $server->{keep_alive};
-            warn "Can't use keep-alive: conn_cache method not available\n";
-        }
+        print STDERR "On page: $page\n";
+        printf(STDERR " %-40s  %s\n", $_, $validated{$_}) for @{$bad_links{$page}};
+        print STDERR "\n";
     }
-
-    # Disable HEAD requests if there's no reason to use them
-    # Keep_alives is questionable because even without keep alives
-    # it might be faster to do a HEAD than a partial GET.
-    if ($server->{use_head_requests} && !$server->{keep_alive} || $server->{max_size})
-    {
-        #warn 'Option "use_head_requests" was disabled.\nNeed keep_alive and max_size options\n';
-        #delete $server->{use_head_requests};
-    }
-
-    # uri, parent, depth
-    eval { spider($server, $uri) };
-    printf STDERR ("\r%104s\r%s", " ", $@) if $@;
-
-    # Free up LWP to avoid CLOSE_WAITs hanging
-    delete $server->{ua};
-
-    $start = time - $start;
-    $start++ unless $start;
-
-    my $max_width = 0;
-    my $max_num = 0;
-    for (keys %{$server->{counts}})
-    {
-        $max_width = length if length > $max_width;
-        my $val = commify($server->{counts}{$_});
-        $max_num = length $val if length $val > $max_num;
-    }
-
-    print STDERR "\nSummary for: $server->{base_url}\n";
-
-    for (sort keys %{$server->{counts}})
-    {
-        printf STDERR "%${max_width}s: %${max_num}s  (%0.1f/sec)\n",
-            $_,
-            commify($server->{counts}{$_}),
-            $server->{counts}{$_}/$start;
-    }
-
-    if (%bad_links)
-    {
-        print STDERR "\nBad Links:\n\n";
-        foreach my $page (sort keys %bad_links)
-        {
-            print STDERR "On page: $page\n";
-            printf(STDERR " %-40s  %s\n", $_, $validated{$_}) for @{$bad_links{$page}};
-            print STDERR "\n";
-        }
-    }
+}
 
 #=======================================================================
 # spider()
